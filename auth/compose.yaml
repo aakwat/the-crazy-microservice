@@ -1,0 +1,95 @@
+# Self-contained plugin: the auth service and the only database it may reach.
+services:
+  auth:
+    build: .
+    image: crazy-ms/auth:dev
+    environment:
+      AUTH_DB_URL: jdbc:postgresql://auth-db:5432/auth
+      AUTH_DB_APP_USER: auth_app
+      AUTH_DB_OWNER_USER: auth_owner
+      AUTH_PRIVATE_KEY_PATH: /run/secrets/auth_private_key
+      AUTH_PUBLIC_KEY_PATH: /run/secrets/auth_public_key
+      # Each file in /run/secrets becomes a property named after it, so passwords never sit in the environment.
+      SPRING_CONFIG_IMPORT: configtree:/run/secrets/
+    secrets:
+      - auth_private_key
+      - auth_public_key
+      - AUTH_DB_APP_PASSWORD
+      - AUTH_DB_OWNER_PASSWORD
+    depends_on:
+      auth-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/actuator/health/readiness"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 40s
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+    restart: unless-stopped
+    stop_grace_period: 30s
+    # No ports: inbound only from the app network. Both networks are internal, so no outbound internet.
+    networks:
+      - app
+      - auth-data
+
+  auth-db:
+    image: docker.io/library/postgres:18.6-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
+    environment:
+      POSTGRES_DB: auth
+      POSTGRES_USER: auth_owner
+      POSTGRES_PASSWORD_FILE: /run/secrets/AUTH_DB_OWNER_PASSWORD
+    secrets:
+      - AUTH_DB_OWNER_PASSWORD
+      - AUTH_DB_APP_PASSWORD
+    volumes:
+      - auth-db-data:/var/lib/postgresql
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auth_owner -d auth"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
+    cap_drop: [ALL]
+    # Only what the entrypoint needs to fix data-dir ownership and drop from root to the postgres user.
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    security_opt: [no-new-privileges:true]
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    restart: unless-stopped
+    networks:
+      - auth-data
+
+secrets:
+  auth_private_key:
+    file: ./secrets/auth-private.pem
+  auth_public_key:
+    file: ./secrets/auth-public.pem
+  AUTH_DB_OWNER_PASSWORD:
+    file: ./secrets/AUTH_DB_OWNER_PASSWORD
+  AUTH_DB_APP_PASSWORD:
+    file: ./secrets/AUTH_DB_APP_PASSWORD
+
+volumes:
+  auth-db-data:
+
+networks:
+  app:
+    internal: true
+  auth-data:
+    internal: true

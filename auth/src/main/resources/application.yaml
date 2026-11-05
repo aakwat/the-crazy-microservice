@@ -1,0 +1,40 @@
+spring:
+  application:
+    name: auth
+  # Required from the environment; no defaults so a missing secret fails startup instead of using a weak one.
+  datasource:
+    url: ${AUTH_DB_URL}
+    username: ${AUTH_DB_APP_USER}
+    password: ${AUTH_DB_APP_PASSWORD}
+  # Migrations run as the schema owner; the app user can only read and write rows.
+  flyway:
+    user: ${AUTH_DB_OWNER_USER}
+    password: ${AUTH_DB_OWNER_PASSWORD}
+  jpa:
+    # Flyway owns the schema; Hibernate only checks that the entities match it.
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  session:
+    jdbc:
+      initialize-schema: never
+  security:
+    oauth2:
+      authorizationserver:
+        # Fixed, not derived from the request Host, so every replica and every caller sees the same iss.
+        issuer: ${AUTH_ISSUER}
+
+auth:
+  audience: ${AUTH_AUDIENCE:crazy-ms}
+  access-token-ttl: ${AUTH_ACCESS_TOKEN_TTL:15m}
+  refresh-token-ttl: ${AUTH_REFRESH_TOKEN_TTL:8h}
+  default-role: ${AUTH_DEFAULT_ROLE:customer}
+  private-key-path: ${AUTH_PRIVATE_KEY_PATH}
+  public-key-path: ${AUTH_PUBLIC_KEY_PATH}
+  # Clients are project-specific: supply them through an imported file (see compose.yaml), not here.
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true

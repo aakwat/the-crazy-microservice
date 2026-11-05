@@ -1,0 +1,4 @@
+# Allow-list: only what the build needs enters the context, so secrets/ and target/ never do.
+*
+!pom.xml
+!src/
