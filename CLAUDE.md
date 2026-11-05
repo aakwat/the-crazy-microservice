@@ -15,39 +15,123 @@ stateless so it can run as several replicas.
 | -------- | ------ | ------------------------------------------------------ |
 | gateway  | Go     | routing, JWT verify, WebSocket upgrade proxy           |
 | auth     | Java   | users, password hashing, JWT signing, JWKS             |
-| tickets  | Rust   | tickets in Postgres, outbox table and its relay        |
-| image    | Go     | attachment thumbnails, objects in MinIO                |
-| realtime | Node   | WebSocket push of ticket events                        |
+| tickets  | Rust   | tickets, attachment records, originals bucket, outbox  |
+| image    | Go     | thumbs bucket; worker only, no HTTP route              |
+| realtime | Node   | live sockets; pushes "ticket changed" notifications    |
 | jobs     | Python | scheduled work: SLA escalation, auto-close             |
 | ai       | Python | auto-triage of new tickets via a local model (Ollama)  |
 
 Build order, one scope at a time: auth, gateway, tickets, outbox relay,
 realtime, image, jobs, ai, k8s.
 
+Layers: L1 edge (Traefik TLS, gateway), L2 request services (auth, tickets,
+realtime), L3 messaging (Redis Streams), L4 workers (image, ai, jobs), L5 data
+(Postgres per service, MinIO, Ollama). Inside every service: transport → app
+→ domain ← adapters; the domain imports no framework, DB or transport code.
+Diagrams: `docs/architecture.html`; change it with the contracts below.
+
 ### Contracts between services
 
-- Auth signs JWTs with a private key and publishes `/.well-known/jwks.json`.
-  The gateway verifies locally; no per-request call to auth.
-- The gateway strips any inbound `X-User-Id` and sets its own from the token.
-  Services trust that header only because nothing but the gateway reaches them.
-- Sync traffic is JSON over HTTP. No gRPC: there is no service-to-service sync
-  call that needs it.
-- Async traffic is Redis Streams with consumer groups (polyglot; BullMQ is
-  Node-only). Tickets writes events to its outbox in the same transaction as
-  the change; the relay claims rows with `FOR UPDATE SKIP LOCKED` so replicas
-  never double-publish. Consumers must be idempotent: delivery is at-least-once.
-- Realtime fans out across replicas via Redis pub/sub.
+Three channels, never mixed. Schemas live in `contracts/openapi/` (HTTP) and
+`contracts/events/` (JSON Schema); they are the source of truth, not the code.
+
+**Identity (zero trust).** Auth signs ES256 JWTs (15 min) and publishes
+`/.well-known/jwks.json`. `POST /auth/login` returns only the RFC 6749 §5.1
+JSON body (`access_token`, `token_type`, `expires_in`, `no-store`); auth never
+sets cookies. The gateway owns the browser cookie (sets it, maps it to
+`Authorization` upstream, clears it on logout). Every service verifies the JWT
+against cached JWKS (refetch on unknown `kid`); none trusts an identity
+header. Internal callers (jobs, ai) use a service token issued by auth.
+
+**Sync HTTP (JSON), kept minimal.** Only: gateway → auth, tickets (proxy) and
+→ realtime (WS), services → auth JWKS, jobs and ai → tickets `GET /internal/*`
+(reads only), ai → Ollama. Permission checks live in the owning service. The
+gateway returns 404 for `/internal/*`, caps bodies, sets timeouts, and never
+retries POST. Discovery is DNS (compose / k8s Service names). No gRPC.
+
+**Events (Redis Streams).** Envelope:
+`{id: uuidv7, type, version, occurred_at: RFC3339, subject_id, traceparent, payload}`.
+
+| Stream               | Producer         | Consumers               |
+| -------------------- | ---------------- | ----------------------- |
+| `tickets.events`     | tickets (outbox) | realtime, ai, image     |
+| `attachments.events` | image            | tickets                 |
+| `triage.events`      | ai               | tickets                 |
+| `jobs.commands`      | jobs             | tickets                 |
+
+- Events are thin: IDs, type, status, `requester_id`, `assignee_id`. Never
+  ticket text or other personal data (GDPR minimisation); fetch it from
+  tickets `/internal` if needed.
+- Only tickets writes ticket data; other services change it by event.
+- Uploads go to tickets (permission check, original to MinIO, outbox
+  `attachment.uploaded`); image consumes that and never serves HTTP.
+- Only tickets has an outbox: it is the only DB-write-plus-publish. The relay
+  claims rows with `FOR UPDATE SKIP LOCKED` so replicas never double-publish.
+- Workers use consumer groups. Delivery is at-least-once, so every consumer
+  dedupes on envelope `id`. `XAUTOCLAIM` stuck messages; after 5 deliveries move
+  to `<stream>.dlq`. Trim with `MAXLEN ~`.
+- Realtime does NOT use a consumer group: every replica must see every event,
+  so each replica `XREAD BLOCK`s from `$`. It pushes only "ticket {id}
+  changed" to the requester and assignee; the client refetches via REST, so
+  authorisation stays in tickets. WS auth is the gateway's httpOnly cookie on
+  upgrade, never a query token.
+
+**Other invariants.**
+
+- `traceparent` on every HTTP call and in every envelope.
 - Image decoding treats input as hostile: check dimensions with
   `image.DecodeConfig` before decoding.
 - AI output is untrusted (ticket text can carry prompt injection). It may only
   set allow-listed values (category enum, priority 1-4), validated before the
   write; it never triggers actions or writes free text.
 
+### Services are plugins
+
+Each service directory is self-contained and reusable in another project:
+its own `compose.yaml` (service + its own Postgres), `Dockerfile`,
+`dev-secrets.sh`, env-only config, and standard contracts (JWKS, RFC 6749,
+RFC 9457). The root `compose.yaml` only `include:`s them; nothing in a plugin
+may reference another plugin's internals.
+
+### Inbound / outbound (compose networks now, NetworkPolicy later)
+
+All networks are `internal: true` (no internet egress); only the gateway will
+publish a port. Secrets are files under `/run/secrets`, never env vars
+(Spring reads them via `SPRING_CONFIG_IMPORT=configtree:/run/secrets/`,
+Postgres via `*_FILE`).
+
+| Service | Inbound from        | Outbound to |
+| ------- | ------------------- | ----------- |
+| auth    | `app` network (8080) | auth-db     |
+| auth-db | auth only           | none        |
+| client  | none (tools profile) | `app`       |
+
+### Database rules
+
+Postgres 18, one database per service. Two roles: `<svc>_owner` runs Flyway
+(DDL), `<svc>_app` is the runtime user with only select/insert/update/delete
+(granted by `db/init/01-roles.sh` default privileges). Ids are UUIDv7 assigned
+in the domain, with `default uuidv7()` as a fallback for other writers.
+Invariants are also DB constraints. Hibernate runs with `ddl-auto=validate`.
+
 ## Commands
 
-Toolchains come from the flake: `direnv allow` (or `nix develop`). Format
-TS/JSON/Markdown/TOML/YAML with `dprint fmt`. Per-service commands are added
-here as each service lands.
+Toolchains come from the flake: `direnv allow` (or `nix develop`); it also
+points Testcontainers at rootless podman. Format with `dprint fmt`.
+
+```fish
+./auth/dev-secrets.sh                               # once: keys + DB passwords in auth/secrets/
+docker compose up -d --build --wait                 # start every included plugin
+docker compose run --rm client -s http://auth:8080/.well-known/jwks.json
+docker compose down -v                              # stop and wipe volumes
+cd auth; mvn verify                                 # unit + Testcontainers tests (needs podman socket)
+cd auth; mvn test -Dtest=AuthFlowTest#duplicateEmailInAnyCaseIsConflict
+```
+
+Auth layout: feature modules `account/` and `token/`, each
+`domain/ service/ repository/ web/` (`repository/jpa` holds entities and
+Spring Data interfaces, `web/dto` the wire records). Domain classes import
+nothing from Spring or JPA. No Lombok: records cover DTOs and domain.
 
 ## Working agreement
 
