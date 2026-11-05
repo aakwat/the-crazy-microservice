@@ -43,9 +43,17 @@
           dprint
           nixd
           taplo
+          openssl
+          jq
         ];
 
         JAVA_HOME = "${pkgs.jdk21}";
+
+        # Testcontainers talks to rootless podman; Ryuk needs a privileged socket podman does not give it.
+        shellHook = ''
+          export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/podman/podman.sock"
+          export TESTCONTAINERS_RYUK_DISABLED=true
+        '';
       };
     };
 }
