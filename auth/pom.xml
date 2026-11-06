@@ -135,6 +135,20 @@
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
 			</plugin>
+			<!-- CVE scan, run on purpose (weekly), not every build: the first run downloads the NVD feed. -->
+			<plugin>
+				<groupId>org.owasp</groupId>
+				<artifactId>dependency-check-maven</artifactId>
+				<version>13.0.0</version>
+				<configuration>
+					<failBuildOnCVSS>7</failBuildOnCVSS>
+					<nvdApiKeyEnvironmentVariable>NVD_API_KEY</nvdApiKeyEnvironmentVariable>
+					<formats>
+						<format>HTML</format>
+						<format>JSON</format>
+					</formats>
+				</configuration>
+			</plugin>
 			<!-- Formatting is applied by every build, never by hand (CLAUDE.md). -->
 			<plugin>
 				<groupId>com.diffplug.spotless</groupId>

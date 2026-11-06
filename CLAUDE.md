@@ -151,6 +151,7 @@ docker compose -f compose.yaml -f auth/compose.dev.yaml up -d --build --wait   #
 docker compose run --rm client -s http://auth:8080/.well-known/openid-configuration
 docker compose down -v                              # stop and wipe volumes
 cd auth; mvn clean verify                           # unit + Testcontainers tests (needs podman socket)
+cd auth; mvn dependency-check:check                 # weekly CVE scan; fails on CVSS >= 7 (set NVD_API_KEY)
 cd auth; mvn test -Dtest=AuthorizationCodeFlowTest#refreshTokensRotateAndCannotBeReplayed
 ```
 
