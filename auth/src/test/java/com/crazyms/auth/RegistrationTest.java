@@ -43,4 +43,16 @@ class RegistrationTest extends AuthTestSupport {
     assertThat(register("not-an-email", PASSWORD).status()).isEqualTo(400);
     assertThat(postJson("/auth/register", Map.of("email", uniqueEmail())).status()).isEqualTo(400);
   }
+
+  @Test
+  void unknownFieldsAreRejectedNotIgnored() {
+    // A client trying to pick its own role (mass assignment) must fail loudly.
+    var res =
+        postJson(
+            "/auth/register",
+            Map.of("email", uniqueEmail(), "password", PASSWORD, "role", "agent"));
+
+    assertThat(res.status()).isEqualTo(400);
+    assertThat(res.headers().getContentType()).isEqualTo(MediaType.APPLICATION_PROBLEM_JSON);
+  }
 }

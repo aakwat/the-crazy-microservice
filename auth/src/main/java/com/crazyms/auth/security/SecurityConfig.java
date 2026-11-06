@@ -10,6 +10,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /** Everything outside the authorization server endpoints: the login page, sign-up and health. */
 @Configuration(proxyBeanMethods = false)
@@ -28,6 +29,8 @@ class SecurityConfig {
                 .anyRequest()
                 .authenticated())
         .formLogin(Customizer.withDefaults())
+        // After the CSRF check, before authentication: oversized input never reaches Argon2.
+        .addFilterBefore(new LoginInputLimitFilter(), UsernamePasswordAuthenticationFilter.class)
         // Sign-up is JSON and never uses the session cookie, so CSRF cannot ride on it.
         .csrf(csrf -> csrf.ignoringRequestMatchers("/auth/register"))
         .build();

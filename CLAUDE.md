@@ -181,6 +181,11 @@ unknown email (`UsernameNotFoundException`), so neither message nor timing
 reveals the lock; `LoginAttemptService` reads the stored lock to record the
 true reason.
 
+Validation: length limits live once, as domain constants (`Account.MAX_EMAIL_LENGTH`,
+`PasswordCredential.MIN_/MAX_PASSWORD_LENGTH`), used by `@Valid` DTOs and by
+`LoginInputLimitFilter`, which fails oversized `POST /login` before Argon2 runs. Unknown JSON
+fields are a 400 (`fail-on-unknown-properties`), so mass assignment is never silently ignored.
+
 ## Working agreement
 
 - Verify before claiming. Read the file, run the command, quote the output.

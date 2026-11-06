@@ -9,6 +9,9 @@ import java.util.UUID;
 /** Who someone is; how they prove it is a separate credential. */
 public record Account(UUID id, String email, Role role, Instant createdAt) {
 
+  /** RFC 5321's path limit; the database enforces the same bound. */
+  public static final int MAX_EMAIL_LENGTH = 254;
+
   public Account {
     Objects.requireNonNull(id);
     Objects.requireNonNull(role);
