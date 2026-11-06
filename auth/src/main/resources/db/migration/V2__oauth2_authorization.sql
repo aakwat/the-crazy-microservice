@@ -1,5 +1,5 @@
--- From spring-security-oauth2-authorization-server 7.1.2, adapted as its own notes require for Postgres:
--- blob -> text, timestamp -> timestamptz. Registered clients are not stored: they come from config.
+-- spring-security-oauth2-authorization-server 7.1.2 schema with its Postgres notes applied (blob->text, timestamptz).
+-- No oauth2_registered_client table: clients come from config.
 create table oauth2_authorization (
     id                            varchar(100)  not null,
     registered_client_id          varchar(100)  not null,

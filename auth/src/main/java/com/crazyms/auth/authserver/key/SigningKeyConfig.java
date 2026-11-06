@@ -25,10 +25,7 @@ import java.util.Base64;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/**
- * The only place that knows where signing keys come from. Every replica must share them, so they are never
- * generated here; swapping PEM files for a KMS or Vault means replacing this class and nothing else.
- */
+/** The only place that knows where signing keys live; moving to a KMS or Vault means replacing just this class. */
 @Configuration(proxyBeanMethods = false)
 class SigningKeyConfig {
 
@@ -38,6 +35,7 @@ class SigningKeyConfig {
         return new ImmutableJWKSet<>(new JWKSet(loadSigningKey(props)));
     }
 
+    // Loaded, never generated: every replica must sign with, and publish, the same key.
     private static ECKey loadSigningKey(AuthProperties props)
             throws IOException, GeneralSecurityException, JOSEException {
         var kf = KeyFactory.getInstance("EC");

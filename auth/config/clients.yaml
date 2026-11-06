@@ -1,0 +1,13 @@
+# This project's OAuth clients. Another project plugs auth in by mounting its own file here.
+auth:
+  clients:
+    - id: gateway
+      secret: ${AUTH_CLIENT_GATEWAY_SECRET}
+      grant-types: [authorization_code, refresh_token]
+      # Dev hand-test callback; the gateway scope replaces it with the gateway's own callback.
+      redirect-uris: [http://127.0.0.1:9999/callback]
+      scopes: [openid, email]
+    - id: jobs
+      secret: ${AUTH_CLIENT_JOBS_SECRET}
+      grant-types: [client_credentials]
+      scopes: [tickets.read]

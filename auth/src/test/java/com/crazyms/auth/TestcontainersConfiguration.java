@@ -33,6 +33,18 @@ class TestcontainersConfiguration {
             registry.add("auth.public-key-path", () -> keys.resolve("public.pem").toString());
             registry.add("spring.flyway.user", postgres::getUsername);
             registry.add("spring.flyway.password", postgres::getPassword);
+            registry.add("spring.security.oauth2.authorizationserver.issuer", () -> TestClients.ISSUER);
+            registry.add("auth.clients[0].id", () -> TestClients.GATEWAY);
+            registry.add("auth.clients[0].secret", () -> TestClients.GATEWAY_SECRET);
+            registry.add("auth.clients[0].grant-types[0]", () -> "authorization_code");
+            registry.add("auth.clients[0].grant-types[1]", () -> "refresh_token");
+            registry.add("auth.clients[0].redirect-uris[0]", () -> TestClients.REDIRECT_URI);
+            registry.add("auth.clients[0].scopes[0]", () -> "openid");
+            registry.add("auth.clients[0].scopes[1]", () -> "email");
+            registry.add("auth.clients[1].id", () -> TestClients.JOBS);
+            registry.add("auth.clients[1].secret", () -> TestClients.JOBS_SECRET);
+            registry.add("auth.clients[1].grant-types[0]", () -> "client_credentials");
+            registry.add("auth.clients[1].scopes[0]", () -> "tickets.read");
         };
     }
 

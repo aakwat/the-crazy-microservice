@@ -32,7 +32,7 @@ class SecurityConfig {
 
     @Bean
     PasswordEncoder passwordEncoder() {
-        // OWASP minimum for Argon2id: 19 MiB memory, 2 iterations, parallelism 1. Also hashes client secrets.
+        // OWASP minimum for Argon2id: 19 MiB memory, 2 iterations, parallelism 1.
         return new Argon2PasswordEncoder(16, 32, 1, 19 * 1024, 2);
     }
 }

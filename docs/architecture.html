@@ -177,7 +177,7 @@ code { font-family: var(--font-mono); font-size: 13px; }
 </svg>
   <figcaption>Workers call tickets only to read (<code>GET /internal/*</code>); every change to ticket data goes in as an event that tickets applies.</figcaption>
   </figure>
-  <div class="table-wrap"><table><thead><tr><th>Service</th><th>Owns (only writer)</th><th>Inbound</th><th>Outbound</th></tr></thead><tbody><tr><td>gateway</td><td>nothing (stateless)</td><td>HTTPS/WSS from Traefik</td><td>auth, tickets (HTTP) · realtime (WS) · JWKS</td></tr><tr><td>auth</td><td>users, credentials, signing keys</td><td>/auth/*, /.well-known/jwks.json</td><td>Postgres auth</td></tr><tr><td>tickets</td><td>tickets, comments, attachment records, originals bucket, outbox</td><td>/tickets/*, /internal/* (service token)</td><td>Postgres tickets, MinIO, tickets.events; consumes attachments, triage, jobs streams</td></tr><tr><td>realtime</td><td>live connections, in memory</td><td>WS</td><td>XREAD tickets.events</td></tr><tr><td>image</td><td>thumbs bucket</td><td>tickets.events: attachment.uploaded</td><td>MinIO, attachments.events</td></tr><tr><td>ai</td><td>nothing; it classifies</td><td>tickets.events: ticket.created</td><td>tickets /internal, Ollama, triage.events</td></tr><tr><td>jobs</td><td>nothing; it schedules</td><td>timer</td><td>tickets /internal, jobs.commands</td></tr></tbody></table></div>
+  <div class="table-wrap"><table><thead><tr><th>Service</th><th>Owns (only writer)</th><th>Inbound</th><th>Outbound</th></tr></thead><tbody><tr><td>gateway</td><td>nothing (stateless)</td><td>HTTPS/WSS from Traefik</td><td>auth, tickets (HTTP) · realtime (WS) · JWKS</td></tr><tr><td>auth</td><td>accounts, signing keys, OAuth authorizations, login sessions</td><td>/oauth2/*, /.well-known/openid-configuration, /userinfo, /login, POST /auth/register</td><td>Postgres auth</td></tr><tr><td>tickets</td><td>tickets, comments, attachment records, originals bucket, outbox</td><td>/tickets/*, /internal/* (service token)</td><td>Postgres tickets, MinIO, tickets.events; consumes attachments, triage, jobs streams</td></tr><tr><td>realtime</td><td>live connections, in memory</td><td>WS</td><td>XREAD tickets.events</td></tr><tr><td>image</td><td>thumbs bucket</td><td>tickets.events: attachment.uploaded</td><td>MinIO, attachments.events</td></tr><tr><td>ai</td><td>nothing; it classifies</td><td>tickets.events: ticket.created</td><td>tickets /internal, Ollama, triage.events</td></tr><tr><td>jobs</td><td>nothing; it schedules</td><td>timer</td><td>tickets /internal, jobs.commands</td></tr></tbody></table></div>
 </section>
 
 <section>
@@ -369,7 +369,7 @@ code { font-family: var(--font-mono); font-size: 13px; }
 <article class="card">
 <h3>auth <span>Java</span></h3><ol class="stack">
 <li class="lay transport"><b>transport</b><span>web/: controllers, DTOs, @Valid</span></li>
-<li class="lay app"><b>app</b><span>service/: register, login, issue token, @Transactional</span></li>
+<li class="lay app"><b>app</b><span>service/: register, @Transactional · authserver/: SAS chain, token claims</span></li>
 <li class="lay domain"><b>domain</b><span>domain/: User, password policy</span></li>
 <li class="lay adapters"><b>adapters</b><span>repository/: MyBatis mappers · keys: signing key</span></li>
 </ol></article>

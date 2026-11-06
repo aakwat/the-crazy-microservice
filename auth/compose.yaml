@@ -9,13 +9,20 @@ services:
       AUTH_DB_OWNER_USER: auth_owner
       AUTH_PRIVATE_KEY_PATH: /run/secrets/auth_private_key
       AUTH_PUBLIC_KEY_PATH: /run/secrets/auth_public_key
+      # The iss every token carries and every service validates; auth/compose.dev.yaml overrides it.
+      AUTH_ISSUER: http://auth:8080
       # Each file in /run/secrets becomes a property named after it, so passwords never sit in the environment.
-      SPRING_CONFIG_IMPORT: configtree:/run/secrets/
+      SPRING_CONFIG_IMPORT: configtree:/run/secrets/,file:/config/clients.yaml
     secrets:
       - auth_private_key
       - auth_public_key
       - AUTH_DB_APP_PASSWORD
       - AUTH_DB_OWNER_PASSWORD
+      - AUTH_CLIENT_GATEWAY_SECRET
+      - AUTH_CLIENT_JOBS_SECRET
+    volumes:
+      # The project-specific part: another project mounts its own clients file here.
+      - ./config/clients.yaml:/config/clients.yaml:ro
     depends_on:
       auth-db:
         condition: service_healthy
@@ -37,7 +44,7 @@ services:
           cpus: "1.0"
     restart: unless-stopped
     stop_grace_period: 30s
-    # No ports: inbound only from the app network. Both networks are internal, so no outbound internet.
+    # Internal networks only: reachable via app, no outbound internet, and therefore no published ports.
     networks:
       - app
       - auth-data
@@ -84,6 +91,10 @@ secrets:
     file: ./secrets/AUTH_DB_OWNER_PASSWORD
   AUTH_DB_APP_PASSWORD:
     file: ./secrets/AUTH_DB_APP_PASSWORD
+  AUTH_CLIENT_GATEWAY_SECRET:
+    file: ./secrets/AUTH_CLIENT_GATEWAY_SECRET
+  AUTH_CLIENT_JOBS_SECRET:
+    file: ./secrets/AUTH_CLIENT_JOBS_SECRET
 
 volumes:
   auth-db-data:

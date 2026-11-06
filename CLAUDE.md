@@ -14,7 +14,7 @@ stateless so it can run as several replicas.
 | Service  | Lang   | Owns                                                   |
 | -------- | ------ | ------------------------------------------------------ |
 | gateway  | Go     | routing, JWT verify, WebSocket upgrade proxy           |
-| auth     | Java   | users, password hashing, JWT signing, JWKS             |
+| auth     | Java   | accounts, OIDC server (code + PKCE, client creds), JWKS |
 | tickets  | Rust   | tickets, attachment records, originals bucket, outbox  |
 | image    | Go     | thumbs bucket; worker only, no HTTP route              |
 | realtime | Node   | live sockets; pushes "ticket changed" notifications    |
@@ -35,13 +35,17 @@ Diagrams: `docs/architecture.html`; change it with the contracts below.
 Three channels, never mixed. Schemas live in `contracts/openapi/` (HTTP) and
 `contracts/events/` (JSON Schema); they are the source of truth, not the code.
 
-**Identity (zero trust).** Auth signs ES256 JWTs (15 min) and publishes
-`/.well-known/jwks.json`. `POST /auth/login` returns only the RFC 6749 §5.1
-JSON body (`access_token`, `token_type`, `expires_in`, `no-store`); auth never
-sets cookies. The gateway owns the browser cookie (sets it, maps it to
-`Authorization` upstream, clears it on logout). Every service verifies the JWT
-against cached JWKS (refetch on unknown `kid`); none trusts an identity
-header. Internal callers (jobs, ai) use a service token issued by auth.
+**Identity (zero trust).** Auth is an OAuth 2.1 / OIDC authorization server
+(Spring Authorization Server) with a fixed issuer (`AUTH_ISSUER`): discovery at
+`/.well-known/openid-configuration`, keys at `/oauth2/jwks`, ES256 tokens
+(access 15 min, refresh 8 h and rotated). Browsers use authorization code +
+PKCE with the gateway as the confidential client (BFF): the gateway owns the
+browser cookie and maps it to `Authorization` upstream; auth never hands tokens
+to the browser. Workers (jobs, ai) use `client_credentials`. Access tokens carry
+`sub` (account id, never the email, or client id), `aud` = `crazy-ms`, and
+`roles` for users. Every service verifies against cached JWKS (refetch on
+unknown `kid`); none trusts an identity header. Auth's only custom endpoint is
+`POST /auth/register`.
 
 **Sync HTTP (JSON), kept minimal.** Only: gateway → auth, tickets (proxy) and
 → realtime (WS), services → auth JWKS, jobs and ai → tickets `GET /internal/*`
@@ -89,8 +93,9 @@ retries POST. Discovery is DNS (compose / k8s Service names). No gRPC.
 
 Each service directory is self-contained and reusable in another project:
 its own `compose.yaml` (service + its own Postgres), `Dockerfile`,
-`dev-secrets.sh`, env-only config, and standard contracts (JWKS, RFC 6749,
-RFC 9457). The root `compose.yaml` only `include:`s them; nothing in a plugin
+`dev-secrets.sh`, env-only config, and standard contracts (OIDC discovery,
+JWKS, RFC 9457). Project-specific settings are files a project mounts, e.g.
+`auth/config/clients.yaml`. The root `compose.yaml` only `include:`s them; nothing in a plugin
 may reference another plugin's internals.
 
 ### Inbound / outbound (compose networks now, NetworkPolicy later)
@@ -106,6 +111,10 @@ Postgres via `*_FILE`).
 | auth-db | auth only           | none        |
 | client  | none (tools profile) | `app`       |
 
+`auth/compose.dev.yaml` (dev only, passed with `-f`) publishes auth on
+`127.0.0.1:9000` via a non-internal `dev-edge` network, because internal-only
+networks cannot publish ports; it also gives auth egress, so never ship it.
+
 ### Database rules
 
 Postgres 18, one database per service. Two roles: `<svc>_owner` runs Flyway
@@ -120,18 +129,27 @@ Toolchains come from the flake: `direnv allow` (or `nix develop`); it also
 points Testcontainers at rootless podman. Format with `dprint fmt`.
 
 ```fish
-./auth/dev-secrets.sh                               # once: keys + DB passwords in auth/secrets/
-docker compose up -d --build --wait                 # start every included plugin
-docker compose run --rm client -s http://auth:8080/.well-known/jwks.json
+./auth/dev-secrets.sh                               # once: keys, DB passwords, client secrets
+docker compose up -d --build --wait                 # private stack (every included plugin)
+docker compose -f compose.yaml -f auth/compose.dev.yaml up -d --build --wait   # + auth on 127.0.0.1:9000
+docker compose run --rm client -s http://auth:8080/.well-known/openid-configuration
 docker compose down -v                              # stop and wipe volumes
-cd auth; mvn verify                                 # unit + Testcontainers tests (needs podman socket)
-cd auth; mvn test -Dtest=AuthFlowTest#duplicateEmailInAnyCaseIsConflict
+cd auth; mvn clean verify                           # unit + Testcontainers tests (needs podman socket)
+cd auth; mvn test -Dtest=AuthorizationCodeFlowTest#refreshTokensRotateAndCannotBeReplayed
 ```
 
-Auth layout: feature modules `account/` and `token/`, each
-`domain/ service/ repository/ web/` (`repository/jpa` holds entities and
-Spring Data interfaces, `web/dto` the wire records). Domain classes import
-nothing from Spring or JPA. No Lombok: records cover DTOs and domain.
+Use `clean` after deleting or renaming a test: stale classes in
+`target/test-classes` otherwise keep running.
+
+Auth layout: `account/` (`domain/ service/ repository/ web/`, with
+`repository/jpa` for entities and Spring Data, `web/dto` for wire records),
+`authserver/` (SAS chain, JDBC authorization store, token customizer,
+`client/` registrations from config, `key/` the only place that loads signing
+keys), and `security/` (login page chain, Argon2, account-backed
+`UserDetailsService`). Domain classes import nothing from Spring or JPA. No
+Lombok: records cover DTOs and domain. Token claims must use `ArrayList` or
+`Collections.singletonList`: SAS stores them as typed JSON and rejects
+`List.of`/`toList()` on read-back.
 
 ## Working agreement
 

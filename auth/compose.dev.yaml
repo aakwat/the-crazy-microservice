@@ -1,0 +1,13 @@
+# Dev-only override (pass with -f) so a browser can reach the login page before the gateway exists.
+services:
+  auth:
+    environment:
+      AUTH_ISSUER: http://localhost:9000
+    ports:
+      - "127.0.0.1:9000:8080"
+    # Internal-only networks cannot publish ports, so dev mode adds one non-internal network (and with it egress).
+    networks:
+      - dev-edge
+
+networks:
+  dev-edge: {}
