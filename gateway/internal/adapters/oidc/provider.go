@@ -74,15 +74,15 @@ func (p *Provider) AuthCodeURL(state, verifier, nonce string) string {
 func (p *Provider) Exchange(ctx context.Context, code, verifier, nonce string) (domain.Tokens, error) {
 	tok, err := p.oauth.Exchange(p.client(ctx), code, oauth2.VerifierOption(verifier))
 	if err != nil {
-		return domain.Tokens{}, fmt.Errorf("code exchange: %w", err)
+		return domain.Tokens{}, classify("code exchange", err)
 	}
 	rawID, _ := tok.Extra("id_token").(string)
 	idToken, err := p.idTokens.Verify(ctx, rawID)
 	if err != nil {
-		return domain.Tokens{}, fmt.Errorf("id token: %w", err)
+		return domain.Tokens{}, fmt.Errorf("id token: %w: %w", domain.ErrTokenRejected, err)
 	}
 	if subtle.ConstantTimeCompare([]byte(idToken.Nonce), []byte(nonce)) != 1 {
-		return domain.Tokens{}, errors.New("id token: nonce mismatch")
+		return domain.Tokens{}, fmt.Errorf("id token: %w: nonce mismatch", domain.ErrTokenRejected)
 	}
 	return domain.Tokens{
 		Subject:      idToken.Subject,
@@ -97,7 +97,7 @@ func (p *Provider) Exchange(ctx context.Context, code, verifier, nonce string) (
 func (p *Provider) Refresh(ctx context.Context, refreshToken string) (domain.Tokens, error) {
 	tok, err := p.oauth.TokenSource(p.client(ctx), &oauth2.Token{RefreshToken: refreshToken}).Token()
 	if err != nil {
-		return domain.Tokens{}, fmt.Errorf("refresh: %w", err)
+		return domain.Tokens{}, classify("refresh", err)
 	}
 	return domain.Tokens{
 		AccessToken:  tok.AccessToken,
@@ -148,6 +148,16 @@ func (p *Provider) EndSessionURL(idTokenHint string) string {
 		"id_token_hint":            {idTokenHint},
 		"post_logout_redirect_uri": {p.cfg.PostLogoutURL},
 	}.Encode()
+}
+
+// classify marks auth's own 400 and 401 answers (RFC 6749 section 5.2) so callers can tell them from outages.
+func classify(op string, err error) error {
+	var re *oauth2.RetrieveError
+	if errors.As(err, &re) && re.Response != nil &&
+		(re.Response.StatusCode == http.StatusBadRequest || re.Response.StatusCode == http.StatusUnauthorized) {
+		return fmt.Errorf("%s: %w: %w", op, domain.ErrTokenRejected, err)
+	}
+	return fmt.Errorf("%s: %w", op, err)
 }
 
 func (p *Provider) client(ctx context.Context) context.Context {

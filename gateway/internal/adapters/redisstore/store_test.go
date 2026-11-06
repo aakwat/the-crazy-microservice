@@ -36,6 +36,23 @@ func TestSessionRoundTripsAndExpires(t *testing.T) {
 	}
 }
 
+func TestReplaceNeverRecreatesADeletedSession(t *testing.T) {
+	store, _ := newStore(t)
+	ctx := context.Background()
+	_ = store.Save(ctx, "s1", domain.Session{AccessToken: "old"}, time.Hour)
+
+	if ok, err := store.Replace(ctx, "s1", domain.Session{AccessToken: "new"}, time.Hour); !ok || err != nil {
+		t.Fatalf("replacing a live session must succeed: %v %v", ok, err)
+	}
+	_ = store.Delete(ctx, "s1")
+	if ok, _ := store.Replace(ctx, "s1", domain.Session{AccessToken: "newer"}, time.Hour); ok {
+		t.Fatal("replace must not write a deleted session")
+	}
+	if _, found, _ := store.Get(ctx, "s1"); found {
+		t.Fatal("the deleted session came back")
+	}
+}
+
 func TestPendingLoginCanBeTakenOnlyOnce(t *testing.T) {
 	store, _ := newStore(t)
 	ctx := context.Background()

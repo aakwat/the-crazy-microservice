@@ -97,6 +97,59 @@ func TestFailedRefreshEndsTheSession(t *testing.T) {
 	}
 }
 
+func TestLogoutDuringRefreshDoesNotReviveTheSession(t *testing.T) {
+	svc, idp, store, clock := newService(t)
+	ctx := context.Background()
+	id := login(t, svc, idp)
+	idp.SetAccessTTL(time.Hour)
+	clock.advance(14*time.Minute + 45*time.Second)
+	// A logout on another replica lands while this one waits for auth to rotate the tokens.
+	store.beforeReplace = func() { _ = store.Delete(ctx, id) }
+
+	if _, err := svc.AccessToken(ctx, id); !errors.Is(err, ErrNoSession) {
+		t.Fatalf("want ErrNoSession, got %v", err)
+	}
+	if _, ok, _ := store.Get(ctx, id); ok {
+		t.Fatal("the refresh revived a logged-out session")
+	}
+	if revoked := idp.RevokedTokens(); len(revoked) != 1 {
+		t.Fatalf("the orphaned refresh token must be revoked, got %v", revoked)
+	}
+}
+
+func TestRefreshUsesTheSessionAnotherReplicaAlreadyRotated(t *testing.T) {
+	svc, idp, store, clock := newService(t)
+	ctx := context.Background()
+	id := login(t, svc, idp)
+	clock.advance(14*time.Minute + 45*time.Second)
+	// Another replica finishes its refresh between this replica's read and its lock.
+	store.onLock = func() {
+		sess, _, _ := store.Get(ctx, id)
+		sess.AccessToken, sess.AccessExpiry = "rotated-elsewhere", clock.now().Add(time.Hour)
+		_ = store.Save(ctx, id, sess, time.Hour)
+	}
+
+	token, err := svc.AccessToken(ctx, id)
+	if err != nil || token != "rotated-elsewhere" {
+		t.Fatalf("want the other replica's token without a second refresh, got %q %v", token, err)
+	}
+}
+
+func TestAuthOutageDuringRefreshKeepsTheSession(t *testing.T) {
+	svc, idp, store, clock := newService(t)
+	ctx := context.Background()
+	id := login(t, svc, idp)
+	clock.advance(15 * time.Minute)
+	idp.Server.Close()
+
+	if _, err := svc.AccessToken(ctx, id); err == nil || errors.Is(err, ErrNoSession) {
+		t.Fatalf("an outage must be an error but not a logout, got %v", err)
+	}
+	if _, ok, _ := store.Get(ctx, id); !ok {
+		t.Fatal("an auth outage must not delete the session")
+	}
+}
+
 func TestSessionEndsAtTheAbsoluteCap(t *testing.T) {
 	svc, idp, store, clock := newService(t)
 	ctx := context.Background()
@@ -196,6 +249,9 @@ type memStore struct {
 	sessions map[string]domain.Session
 	pending  map[string]domain.PendingLogin
 	locks    map[string]bool
+	// onLock and beforeReplace stage what another replica does at that moment.
+	onLock        func()
+	beforeReplace func()
 }
 
 func newMemStore() *memStore {
@@ -215,6 +271,19 @@ func (m *memStore) Get(_ context.Context, id string) (domain.Session, bool, erro
 	defer m.mu.Unlock()
 	s, ok := m.sessions[id]
 	return s, ok, nil
+}
+
+func (m *memStore) Replace(_ context.Context, id string, s domain.Session, _ time.Duration) (bool, error) {
+	if m.beforeReplace != nil {
+		m.beforeReplace()
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.sessions[id]; !ok {
+		return false, nil
+	}
+	m.sessions[id] = s
+	return true, nil
 }
 
 func (m *memStore) Delete(_ context.Context, id string) error {
@@ -241,11 +310,15 @@ func (m *memStore) TakePending(_ context.Context, id string) (domain.PendingLogi
 
 func (m *memStore) TryLock(_ context.Context, id string, _ time.Duration) (bool, error) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	if m.locks[id] {
+		m.mu.Unlock()
 		return false, nil
 	}
 	m.locks[id] = true
+	m.mu.Unlock()
+	if m.onLock != nil {
+		m.onLock()
+	}
 	return true, nil
 }
 

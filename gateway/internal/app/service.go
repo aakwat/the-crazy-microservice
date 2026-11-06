@@ -19,11 +19,12 @@ var ErrNoSession = errors.New("no valid session")
 var ErrLoginInvalid = errors.New("login is invalid or expired")
 
 const (
-	pendingTTL   = 10 * time.Minute
-	lockTTL      = 5 * time.Second
-	refreshSkew  = 30 * time.Second
+	pendingTTL  = 10 * time.Minute
+	refreshSkew = 30 * time.Second
+	// lockTTL outlasts main's 10s timeout on calls to auth, so a slow refresh still holds the lock.
+	lockTTL      = 15 * time.Second
 	waitInterval = 100 * time.Millisecond
-	waitAttempts = 30
+	waitAttempts = int(lockTTL / waitInterval)
 )
 
 // Service runs the browser login, logout and per-request token use cases.
@@ -75,8 +76,11 @@ func (s *Service) CompleteLogin(ctx context.Context, loginID, state, code string
 		return "", 0, ErrLoginInvalid
 	}
 	tokens, err := s.idp.Exchange(ctx, code, pending.Verifier, pending.Nonce)
-	if err != nil {
+	if errors.Is(err, domain.ErrTokenRejected) {
 		return "", 0, fmt.Errorf("%w: %w", ErrLoginInvalid, err)
+	}
+	if err != nil {
+		return "", 0, fmt.Errorf("exchange code: %w", err)
 	}
 
 	now := s.now()
@@ -115,11 +119,11 @@ func (s *Service) AccessToken(ctx context.Context, sessionID string) (string, er
 	if !sess.NeedsRefresh(now, refreshSkew) {
 		return sess.AccessToken, nil
 	}
-	return s.refresh(ctx, sessionID, sess)
+	return s.refresh(ctx, sessionID)
 }
 
 // refresh lets one caller rotate the tokens; with rotation, a second refresh would end the session.
-func (s *Service) refresh(ctx context.Context, sessionID string, sess domain.Session) (string, error) {
+func (s *Service) refresh(ctx context.Context, sessionID string) (string, error) {
 	locked, err := s.store.TryLock(ctx, sessionID, lockTTL)
 	if err != nil {
 		return "", fmt.Errorf("lock session: %w", err)
@@ -129,18 +133,46 @@ func (s *Service) refresh(ctx context.Context, sessionID string, sess domain.Ses
 	}
 	defer func() { _ = s.store.Unlock(context.WithoutCancel(ctx), sessionID) }()
 
-	tokens, err := s.idp.Refresh(ctx, sess.RefreshToken)
+	// Reread under the lock: another replica may have rotated already, and the old token is now dead.
+	sess, ok, err := s.store.Get(ctx, sessionID)
 	if err != nil {
+		return "", fmt.Errorf("get session: %w", err)
+	}
+	if !ok {
+		return "", ErrNoSession
+	}
+	if !sess.NeedsRefresh(s.now(), refreshSkew) {
+		return sess.AccessToken, nil
+	}
+
+	tokens, err := s.idp.Refresh(ctx, sess.RefreshToken)
+	if errors.Is(err, domain.ErrTokenRejected) {
 		_ = s.store.Delete(ctx, sessionID)
 		return "", fmt.Errorf("%w: %w", ErrNoSession, err)
+	}
+	if err != nil {
+		// Keep the session: auth may only be restarting, and the next request can retry.
+		return "", fmt.Errorf("refresh: %w", err)
 	}
 	sess.AccessToken = tokens.AccessToken
 	sess.AccessExpiry = tokens.AccessExpiry
 	if tokens.RefreshToken != "" {
 		sess.RefreshToken = tokens.RefreshToken
 	}
-	if err := s.store.Save(ctx, sessionID, sess, s.lifetime.TTL(sess, s.now())); err != nil {
+	ttl := s.lifetime.TTL(sess, s.now())
+	if ttl <= 0 {
+		// Redis treats a non-positive TTL as no expiry, which would make the session immortal.
+		_ = s.store.Delete(ctx, sessionID)
+		return "", ErrNoSession
+	}
+	replaced, err := s.store.Replace(ctx, sessionID, sess, ttl)
+	if err != nil {
 		return "", fmt.Errorf("save session: %w", err)
+	}
+	if !replaced {
+		// A logout landed mid-refresh; the new refresh token belongs to no session, so revoke it.
+		_ = s.idp.Revoke(context.WithoutCancel(ctx), sess.RefreshToken)
+		return "", ErrNoSession
 	}
 	return sess.AccessToken, nil
 }

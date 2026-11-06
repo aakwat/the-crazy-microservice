@@ -69,6 +69,26 @@ func TestPerIPLimitsEachClientSeparately(t *testing.T) {
 	}
 }
 
+func TestPerIPRefusesNewClientsWhenFullOfActiveOnes(t *testing.T) {
+	limiter := NewPerIP(1, 1)
+	limiter.maxClients = 1
+	handler := limiter.Wrap(ok)
+	call := func(addr string) int {
+		req := httptest.NewRequest(http.MethodPost, "/", nil)
+		req.RemoteAddr = addr
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	if call("203.0.113.1:1000") != http.StatusNoContent {
+		t.Fatal("the first client fits")
+	}
+	if call("203.0.113.2:1000") != http.StatusTooManyRequests {
+		t.Fatal("a new client must be refused while the table is full of active buckets")
+	}
+}
+
 func TestPerIPGroupsIPv6ByPrefix(t *testing.T) {
 	handler := NewPerIP(1, 1).Wrap(ok)
 	call := func(addr string) int {

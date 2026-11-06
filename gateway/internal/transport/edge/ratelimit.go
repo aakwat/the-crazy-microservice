@@ -13,20 +13,21 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// maxClients bounds memory; past it, clients whose bucket has refilled are forgotten.
-const maxClients = 10_000
+// defaultMaxClients bounds memory; past it, refilled clients are forgotten and new ones refused.
+const defaultMaxClients = 10_000
 
 // PerIP is a token bucket per client; each replica counts alone, so the cluster allows replicas × rate.
 type PerIP struct {
-	rate    rate.Limit
-	burst   int
-	mu      sync.Mutex
-	clients map[string]*rate.Limiter
+	rate       rate.Limit
+	burst      int
+	maxClients int
+	mu         sync.Mutex
+	clients    map[string]*rate.Limiter
 }
 
 // NewPerIP allows burst requests at once per client, refilled at r per second.
 func NewPerIP(r rate.Limit, burst int) *PerIP {
-	return &PerIP{rate: r, burst: burst, clients: map[string]*rate.Limiter{}}
+	return &PerIP{rate: r, burst: burst, maxClients: defaultMaxClients, clients: map[string]*rate.Limiter{}}
 }
 
 // Wrap answers 429 with Retry-After once a client has used up its bucket.
@@ -45,11 +46,15 @@ func (p *PerIP) Wrap(next http.Handler) http.Handler {
 func (p *PerIP) allow(key string, now time.Time) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if len(p.clients) >= maxClients {
-		p.forgetRefilled(now)
-	}
 	lim, ok := p.clients[key]
 	if !ok {
+		if len(p.clients) >= p.maxClients {
+			p.forgetRefilled(now)
+		}
+		if len(p.clients) >= p.maxClients {
+			// Still full means every known client is mid-burst; refusing newcomers keeps memory bounded.
+			return false
+		}
 		lim = rate.NewLimiter(p.rate, p.burst)
 		p.clients[key] = lim
 	}

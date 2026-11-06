@@ -39,6 +39,15 @@ func (s *Store) Get(ctx context.Context, id string) (domain.Session, bool, error
 	return sess, ok, err
 }
 
+// Replace writes only over an existing session (SET XX), so a late refresh cannot revive a deleted one.
+func (s *Store) Replace(ctx context.Context, id string, sess domain.Session, ttl time.Duration) (bool, error) {
+	b, err := json.Marshal(sess)
+	if err != nil {
+		return false, err
+	}
+	return s.rdb.SetXX(ctx, sessionPrefix+id, b, ttl).Result()
+}
+
 func (s *Store) Delete(ctx context.Context, id string) error {
 	return s.rdb.Del(ctx, sessionPrefix+id).Err()
 }
