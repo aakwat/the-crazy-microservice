@@ -95,7 +95,7 @@ func TestRevokeReachesTheProvider(t *testing.T) {
 	if err := p.Revoke(context.Background(), "rt-1"); err != nil {
 		t.Fatal(err)
 	}
-	if len(idp.Revoked) != 1 || idp.Revoked[0] != "rt-1" {
-		t.Fatalf("revocation not received: %v", idp.Revoked)
+	if revoked := idp.RevokedTokens(); len(revoked) != 1 || revoked[0] != "rt-1" {
+		t.Fatalf("revocation not received: %v", revoked)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -21,18 +22,18 @@ import (
 // Audience is what access tokens are issued for, matching auth's configuration.
 const Audience = "crazy-ms"
 
-// IdP is the fake server; tests read Revoked and set AccessTTL.
+// IdP is the fake server; its state is guarded by mu because handlers run on server goroutines.
 type IdP struct {
 	Server       *httptest.Server
 	ClientID     string
 	ClientSecret string
-	AccessTTL    time.Duration
 
-	key     *ecdsa.PrivateKey
-	mu      sync.Mutex
-	codes   map[string]grant
-	refresh map[string]string
-	Revoked []string
+	key       *ecdsa.PrivateKey
+	mu        sync.Mutex
+	accessTTL time.Duration
+	codes     map[string]grant
+	refresh   map[string]string
+	revoked   []string
 }
 
 type grant struct {
@@ -48,7 +49,7 @@ func New(t *testing.T) *IdP {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := &IdP{ClientID: "gateway", ClientSecret: "gateway-secret", AccessTTL: 15 * time.Minute,
+	p := &IdP{ClientID: "gateway", ClientSecret: "gateway-secret", accessTTL: 15 * time.Minute,
 		key: key, codes: map[string]grant{}, refresh: map[string]string{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /oauth2/jwks", p.jwks)
@@ -73,10 +74,27 @@ func (p *IdP) IssueCode(challenge, nonce, subject string) string {
 	return code
 }
 
+// SetAccessTTL changes the lifetime of access tokens issued from now on.
+func (p *IdP) SetAccessTTL(d time.Duration) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.accessTTL = d
+}
+
+// RevokedTokens returns every token sent to the revocation endpoint, in order.
+func (p *IdP) RevokedTokens() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.revoked)
+}
+
 // AccessToken signs a token with the given typ and audience, for testing bearer verification.
 func (p *IdP) AccessToken(t *testing.T, subject, typ, audience string) string {
 	t.Helper()
-	raw, err := p.sign(typ, map[string]any{"sub": subject, "aud": []string{audience}}, p.AccessTTL)
+	p.mu.Lock()
+	ttl := p.accessTTL
+	p.mu.Unlock()
+	raw, err := p.sign(typ, map[string]any{"sub": subject, "aud": []string{audience}}, ttl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,19 +140,19 @@ func (p *IdP) token(w http.ResponseWriter, r *http.Request) {
 func (p *IdP) revoke(w http.ResponseWriter, r *http.Request) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.Revoked = append(p.Revoked, r.FormValue("token"))
+	p.revoked = append(p.revoked, r.FormValue("token"))
 	delete(p.refresh, r.FormValue("token"))
 }
 
 // issue must be called with p.mu held; it rotates the refresh token on every call.
 func (p *IdP) issue(w http.ResponseWriter, subject, nonce string) {
-	access, err := p.sign("at+jwt", map[string]any{"sub": subject, "aud": []string{Audience}}, p.AccessTTL)
+	access, err := p.sign("at+jwt", map[string]any{"sub": subject, "aud": []string{Audience}}, p.accessTTL)
 	if err != nil {
 		oauthError(w, http.StatusInternalServerError, "server_error")
 		return
 	}
 	body := map[string]any{"access_token": access, "token_type": "Bearer",
-		"expires_in": int(p.AccessTTL.Seconds()), "refresh_token": rand.Text()}
+		"expires_in": int(p.accessTTL.Seconds()), "refresh_token": rand.Text()}
 	p.refresh[body["refresh_token"].(string)] = subject
 	if nonce != "" {
 		id, err := p.sign("JWT", map[string]any{"sub": subject, "aud": []string{p.ClientID}, "nonce": nonce}, time.Hour)
