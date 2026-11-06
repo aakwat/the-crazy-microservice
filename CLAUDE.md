@@ -117,11 +117,25 @@ networks cannot publish ports; it also gives auth egress, so never ship it.
 
 ### Database rules
 
-Postgres 18, one database per service. Two roles: `<svc>_owner` runs Flyway
-(DDL), `<svc>_app` is the runtime user with only select/insert/update/delete
-(granted by `db/init/01-roles.sh` default privileges). Ids are UUIDv7 assigned
-in the domain, with `default uuidv7()` as a fallback for other writers.
-Invariants are also DB constraints. Hibernate runs with `ddl-auto=validate`.
+Same flavor as the user's `template/backends/api-rs`. Postgres 18, one database
+per service, three roles: the container's `postgres` superuser runs only
+`db/init/01-roles.sh`; `<svc>_migrator` (non-superuser) owns the schema and runs
+Flyway; `<svc>_app` is DML-only with `statement_timeout` 30s, `lock_timeout` 5s,
+`idle_in_transaction_session_timeout` 60s and a pinned `search_path`. Tests run
+the same script, connecting as `_app` and migrating as `_migrator`.
+
+- SQL style: uppercase keywords and types, lowercase identifiers, two-space
+  indent, aligned columns, `idx_<table>_<what>` index names.
+- Identity and credentials are separate tables (`account`,
+  `account_password_credential`); append-only logs (`authentication_attempts`)
+  ship with their retention sweep and the index that serves it.
+- Ids are native `uuid` v7 assigned in the domain, `DEFAULT uuidv7()` as fallback.
+  Invariants are also DB constraints. Hibernate runs with `ddl-auto=validate`.
+- Until the first real deployment, fold schema changes into the migration that
+  owns the table and recreate dev DBs (`docker compose down -v`); after it,
+  never edit an applied migration.
+- Known gap: SAS stores raw token values in `oauth2_authorization` (the
+  template hashes them); access is limited to the two service roles.
 
 ## Commands
 
@@ -141,15 +155,28 @@ cd auth; mvn test -Dtest=AuthorizationCodeFlowTest#refreshTokensRotateAndCannotB
 Use `clean` after deleting or renaming a test: stale classes in
 `target/test-classes` otherwise keep running.
 
-Auth layout: `account/` (`domain/ service/ repository/ web/`, with
-`repository/jpa` for entities and Spring Data, `web/dto` for wire records),
-`authserver/` (SAS chain, JDBC authorization store, token customizer,
-`client/` registrations from config, `key/` the only place that loads signing
-keys), and `security/` (login page chain, Argon2, account-backed
-`UserDetailsService`). Domain classes import nothing from Spring or JPA. No
-Lombok: records cover DTOs and domain. Token claims must use `ArrayList` or
+Auth layout, one module per responsibility, each `config/ domain/ service/
+repository/ web/` as needed:
+
+- `account/`: identity and password credential. `domain/` holds the records and
+  the repository **ports** (interfaces); `repository/` holds the adapters
+  (`JpaAccountRepository implements AccountRepository`) with `repository/jpa`
+  for entities and Spring Data, which never leave the adapter.
+- `login/`: lockout policy, the `authentication_attempts` record and its
+  retention sweep; reaches accounts only through `AccountService`.
+- `authserver/`: `web/` SAS chain, `repository/` JDBC authorization stores,
+  `token/` claims and decoder, `client/` registrations from config, `key/` the
+  only place that loads signing keys.
+- `security/`: adapters to Spring Security (login page chain, Argon2,
+  `UserDetailsService`, auth-event listener).
+
+Services depend on domain ports, never on adapters. Domain classes import
+nothing from Spring or JPA. No Lombok. Token claims must use `ArrayList` or
 `Collections.singletonList`: SAS stores them as typed JSON and rejects
-`List.of`/`toList()` on read-back.
+`List.of`/`toList()` on read-back. A locked account fails exactly like an
+unknown email (`UsernameNotFoundException`), so neither message nor timing
+reveals the lock; `LoginAttemptService` reads the stored lock to record the
+true reason.
 
 ## Working agreement
 

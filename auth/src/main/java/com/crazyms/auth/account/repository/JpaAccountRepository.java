@@ -1,6 +1,7 @@
 package com.crazyms.auth.account.repository;
 
 import com.crazyms.auth.account.domain.Account;
+import com.crazyms.auth.account.domain.AccountRepository;
 import com.crazyms.auth.account.domain.Role;
 import com.crazyms.auth.account.repository.jpa.AccountEntity;
 import com.crazyms.auth.account.repository.jpa.AccountJpaRepository;
@@ -11,21 +12,22 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public class AccountRepository {
+class JpaAccountRepository implements AccountRepository {
 
     static final String EMAIL_UNIQUE = "account_email_key";
 
     private final AccountJpaRepository jpa;
 
-    AccountRepository(AccountJpaRepository jpa) {
+    JpaAccountRepository(AccountJpaRepository jpa) {
         this.jpa = jpa;
     }
 
-    /** Returns false when the email is already registered. */
+
+    @Override
     public boolean insertIfEmailFree(Account account) {
         try {
             // Flush now so the unique constraint fires inside this try, not at commit.
-            jpa.saveAndFlush(toEntity(account));
+            jpa.saveAndFlush(new AccountEntity(account.id(), account.email(), account.role().name(), account.createdAt()));
             return true;
         } catch (DataIntegrityViolationException e) {
             if (e.getCause() instanceof ConstraintViolationException cve
@@ -36,19 +38,17 @@ public class AccountRepository {
         }
     }
 
+    @Override
     public Optional<Account> findByEmail(String normalizedEmail) {
-        return jpa.findByEmail(normalizedEmail).map(AccountRepository::toDomain);
+        return jpa.findByEmail(normalizedEmail).map(JpaAccountRepository::toDomain);
     }
 
+    @Override
     public Optional<Account> findById(UUID id) {
-        return jpa.findById(id).map(AccountRepository::toDomain);
-    }
-
-    private static AccountEntity toEntity(Account a) {
-        return new AccountEntity(a.id(), a.email(), a.passwordHash(), a.role().name(), a.createdAt());
+        return jpa.findById(id).map(JpaAccountRepository::toDomain);
     }
 
     private static Account toDomain(AccountEntity e) {
-        return new Account(e.getId(), e.getEmail(), e.getPasswordHash(), new Role(e.getRole()), e.getCreatedAt());
+        return new Account(e.getId(), e.getEmail(), new Role(e.getRole()), e.getCreatedAt());
     }
 }

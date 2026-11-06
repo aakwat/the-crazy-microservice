@@ -1,4 +1,4 @@
-package com.crazyms.auth.config;
+package com.crazyms.auth.shared.time;
 
 import java.time.Clock;
 import org.springframework.context.annotation.Bean;

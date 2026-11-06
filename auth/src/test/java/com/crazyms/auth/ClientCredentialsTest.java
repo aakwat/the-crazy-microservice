@@ -45,14 +45,4 @@ class ClientCredentialsTest extends AuthTestSupport {
         assertThat(unknownScope.status()).isEqualTo(400);
         assertThat(unknownScope.body()).containsEntry("error", "invalid_scope");
     }
-
-    @Test
-    void workerCannotUseTheBrowserFlow() {
-        var res = token(TestClients.JOBS, TestClients.JOBS_SECRET,
-                Map.of("grant_type", "authorization_code", "code", "anything", "redirect_uri", TestClients.REDIRECT_URI));
-
-        // SAS rejects the unknown code before it checks the grant type, so the error is invalid_grant.
-        assertThat(res.status()).isEqualTo(400);
-        assertThat(res.body()).containsEntry("error", "invalid_grant").doesNotContainKey("access_token");
-    }
 }

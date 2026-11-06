@@ -8,8 +8,8 @@ spring:
     password: ${AUTH_DB_APP_PASSWORD}
   # Migrations run as the schema owner; the app user can only read and write rows.
   flyway:
-    user: ${AUTH_DB_OWNER_USER}
-    password: ${AUTH_DB_OWNER_PASSWORD}
+    user: ${AUTH_DB_MIGRATOR_USER}
+    password: ${AUTH_DB_MIGRATOR_PASSWORD}
   jpa:
     # Flyway owns the schema; Hibernate only checks that the entities match it.
     hibernate:
@@ -25,13 +25,21 @@ spring:
         issuer: ${AUTH_ISSUER}
 
 auth:
-  audience: ${AUTH_AUDIENCE:crazy-ms}
-  access-token-ttl: ${AUTH_ACCESS_TOKEN_TTL:15m}
-  refresh-token-ttl: ${AUTH_REFRESH_TOKEN_TTL:8h}
-  default-role: ${AUTH_DEFAULT_ROLE:customer}
-  private-key-path: ${AUTH_PRIVATE_KEY_PATH}
-  public-key-path: ${AUTH_PUBLIC_KEY_PATH}
-  # Clients are project-specific: supply them through an imported file (see compose.yaml), not here.
+  account:
+    default-role: ${AUTH_DEFAULT_ROLE:customer}
+  login:
+    lockout:
+      max-failures: ${AUTH_LOCKOUT_MAX_FAILURES:5}
+      duration: ${AUTH_LOCKOUT_DURATION:15m}
+    attempt-retention: ${AUTH_ATTEMPT_RETENTION:90d}
+  token:
+    audience: ${AUTH_AUDIENCE:crazy-ms}
+    access-ttl: ${AUTH_ACCESS_TOKEN_TTL:15m}
+    refresh-ttl: ${AUTH_REFRESH_TOKEN_TTL:8h}
+  key:
+    private-path: ${AUTH_PRIVATE_KEY_PATH}
+    public-path: ${AUTH_PUBLIC_KEY_PATH}
+  # auth.client.registrations is project-specific: supply it through an imported file (see compose.yaml).
 
 management:
   endpoint:

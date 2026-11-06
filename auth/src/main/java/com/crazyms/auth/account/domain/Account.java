@@ -6,11 +6,11 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 
-public record Account(UUID id, String email, String passwordHash, Role role, Instant createdAt) {
+/** Who someone is; how they prove it is a separate credential. */
+public record Account(UUID id, String email, Role role, Instant createdAt) {
 
     public Account {
         Objects.requireNonNull(id);
-        Objects.requireNonNull(passwordHash);
         Objects.requireNonNull(role);
         Objects.requireNonNull(createdAt);
         if (!email.equals(normalizeEmail(email))) {
@@ -18,8 +18,8 @@ public record Account(UUID id, String email, String passwordHash, Role role, Ins
         }
     }
 
-    public static Account register(String email, String passwordHash, Role role, Instant now) {
-        return new Account(UuidV7.at(now), normalizeEmail(email), passwordHash, role, now);
+    public static Account register(String email, Role role, Instant now) {
+        return new Account(UuidV7.at(now), normalizeEmail(email), role, now);
     }
 
     public static String normalizeEmail(String email) {

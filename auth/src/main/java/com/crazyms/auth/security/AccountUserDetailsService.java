@@ -1,6 +1,7 @@
 package com.crazyms.auth.security;
 
 import com.crazyms.auth.account.service.AccountService;
+import java.time.Clock;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -12,19 +13,23 @@ import org.springframework.stereotype.Component;
 class AccountUserDetailsService implements UserDetailsService {
 
     private final AccountService accounts;
+    private final Clock clock;
 
-    AccountUserDetailsService(AccountService accounts) {
+    AccountUserDetailsService(AccountService accounts, Clock clock) {
         this.accounts = accounts;
+        this.clock = clock;
     }
 
     @Override
     public UserDetails loadUserByUsername(String email) {
-        return accounts.findByEmail(email)
+        return accounts.findForLogin(email)
+                // A locked account answers like an unknown one: same message, same dummy-hash timing, nothing to probe.
+                .filter(c -> !c.password().isLockedAt(clock.instant()))
                 // Principal name is the account id, so tokens carry a stable, non-personal sub instead of the email.
-                .map(a -> User.withUsername(a.id().toString())
-                        .password(a.passwordHash())
-                        .roles(a.role().name())
+                .map(c -> User.withUsername(c.account().id().toString())
+                        .password(c.password().passwordHash())
+                        .roles(c.account().role().name())
                         .build())
-                .orElseThrow(() -> new UsernameNotFoundException("unknown account"));
+                .orElseThrow(() -> new UsernameNotFoundException("unknown or locked account"));
     }
 }

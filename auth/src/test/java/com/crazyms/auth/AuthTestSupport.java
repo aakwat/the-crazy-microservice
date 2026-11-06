@@ -69,9 +69,26 @@ abstract class AuthTestSupport {
 
     /** POST /oauth2/token as a confidential client (client_secret_basic). */
     Res token(String clientId, String secret, Map<String, String> form) {
+        return token(http, clientId, secret, form);
+    }
+
+    Res exchange(RestClient client, String code, String verifier) {
+        return token(client, TestClients.GATEWAY, TestClients.GATEWAY_SECRET, Map.of(
+                "grant_type", "authorization_code",
+                "code", code,
+                "redirect_uri", TestClients.REDIRECT_URI,
+                "code_verifier", verifier));
+    }
+
+    Res refresh(RestClient client, String refreshToken) {
+        return token(client, TestClients.GATEWAY, TestClients.GATEWAY_SECRET,
+                Map.of("grant_type", "refresh_token", "refresh_token", refreshToken));
+    }
+
+    private static Res token(RestClient client, String clientId, String secret, Map<String, String> form) {
         var body = new LinkedMultiValueMap<String, String>();
         form.forEach(body::add);
-        return http.post().uri("/oauth2/token")
+        return client.post().uri("/oauth2/token")
                 .headers(h -> h.setBasicAuth(clientId, secret))
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .body(body)

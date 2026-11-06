@@ -21,9 +21,6 @@ public class AccountEntity implements Persistable<UUID> {
     @Column(nullable = false)
     private String email;
 
-    @Column(name = "password_hash", nullable = false)
-    private String passwordHash;
-
     @Column(nullable = false)
     private String role;
 
@@ -36,10 +33,9 @@ public class AccountEntity implements Persistable<UUID> {
 
     protected AccountEntity() {}
 
-    public AccountEntity(UUID id, String email, String passwordHash, String role, Instant createdAt) {
+    public AccountEntity(UUID id, String email, String role, Instant createdAt) {
         this.id = id;
         this.email = email;
-        this.passwordHash = passwordHash;
         this.role = role;
         this.createdAt = createdAt;
     }
@@ -62,10 +58,6 @@ public class AccountEntity implements Persistable<UUID> {
 
     public String getEmail() {
         return email;
-    }
-
-    public String getPasswordHash() {
-        return passwordHash;
     }
 
     public String getRole() {

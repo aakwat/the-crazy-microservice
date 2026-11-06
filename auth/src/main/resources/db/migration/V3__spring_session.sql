@@ -1,24 +1,23 @@
--- From spring-session-jdbc 4.1.1 schema-postgresql.sql: the login session shared by every replica.
-create table spring_session (
-    primary_id            char(36) not null,
-    session_id            char(36) not null,
-    creation_time         bigint   not null,
-    last_access_time      bigint   not null,
-    max_inactive_interval int      not null,
-    expiry_time           bigint   not null,
-    principal_name        varchar(100),
-    constraint spring_session_pk primary key (primary_id)
+-- spring-session-jdbc 4.1.1 schema-postgresql.sql: the login session shared by every replica.
+CREATE TABLE spring_session (
+  primary_id            CHAR(36) NOT NULL,
+  session_id            CHAR(36) NOT NULL,
+  creation_time         BIGINT   NOT NULL,
+  last_access_time      BIGINT   NOT NULL,
+  max_inactive_interval INT      NOT NULL,
+  expiry_time           BIGINT   NOT NULL,
+  principal_name        VARCHAR(100),
+  CONSTRAINT spring_session_pk PRIMARY KEY (primary_id)
 );
+CREATE UNIQUE INDEX spring_session_ix1 ON spring_session (session_id);
+CREATE INDEX spring_session_ix2 ON spring_session (expiry_time);
+CREATE INDEX spring_session_ix3 ON spring_session (principal_name);
 
-create unique index spring_session_ix1 on spring_session (session_id);
-create index spring_session_ix2 on spring_session (expiry_time);
-create index spring_session_ix3 on spring_session (principal_name);
-
-create table spring_session_attributes (
-    session_primary_id char(36)     not null,
-    attribute_name     varchar(200) not null,
-    attribute_bytes    bytea        not null,
-    constraint spring_session_attributes_pk primary key (session_primary_id, attribute_name),
-    constraint spring_session_attributes_fk foreign key (session_primary_id)
-        references spring_session (primary_id) on delete cascade
+CREATE TABLE spring_session_attributes (
+  session_primary_id CHAR(36)     NOT NULL,
+  attribute_name     VARCHAR(200) NOT NULL,
+  attribute_bytes    BYTEA        NOT NULL,
+  CONSTRAINT spring_session_attributes_pk PRIMARY KEY (session_primary_id, attribute_name),
+  CONSTRAINT spring_session_attributes_fk FOREIGN KEY (session_primary_id)
+    REFERENCES spring_session(primary_id) ON DELETE CASCADE
 );

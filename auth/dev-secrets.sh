@@ -10,7 +10,7 @@ mkdir -p secrets
 [ -f secrets/auth-public.pem ] ||
     openssl pkey -in secrets/auth-private.pem -pubout -out secrets/auth-public.pem
 
-for name in AUTH_DB_OWNER_PASSWORD AUTH_DB_APP_PASSWORD AUTH_CLIENT_GATEWAY_SECRET AUTH_CLIENT_JOBS_SECRET; do
+for name in AUTH_DB_SUPERUSER_PASSWORD AUTH_DB_MIGRATOR_PASSWORD AUTH_DB_APP_PASSWORD AUTH_CLIENT_GATEWAY_SECRET AUTH_CLIENT_JOBS_SECRET; do
     [ -f "secrets/$name" ] || openssl rand -hex 32 | tr -d '\n' >"secrets/$name"
 done
 

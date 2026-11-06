@@ -1,7 +1,7 @@
 package com.crazyms.auth.authserver.client;
 
-import com.crazyms.auth.config.AuthProperties;
-import com.crazyms.auth.config.AuthProperties.Client;
+import com.crazyms.auth.authserver.client.ClientProperties.Registration;
+import com.crazyms.auth.authserver.token.TokenProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -19,12 +19,13 @@ import org.springframework.security.oauth2.server.authorization.settings.TokenSe
 class ClientRegistrationConfig {
 
     @Bean
-    RegisteredClientRepository registeredClientRepository(AuthProperties props, PasswordEncoder encoder) {
+    RegisteredClientRepository registeredClientRepository(
+            ClientProperties clients, TokenProperties tokens, PasswordEncoder encoder) {
         return new InMemoryRegisteredClientRepository(
-                props.clients().stream().map(c -> toRegisteredClient(c, props, encoder)).toList());
+                clients.registrations().stream().map(c -> toRegisteredClient(c, tokens, encoder)).toList());
     }
 
-    private static RegisteredClient toRegisteredClient(Client c, AuthProperties props, PasswordEncoder encoder) {
+    private static RegisteredClient toRegisteredClient(Registration c, TokenProperties tokens, PasswordEncoder encoder) {
         // The internal id must match across replicas: stored authorizations reference it.
         var builder = RegisteredClient.withId(c.id())
                 .clientId(c.id())
@@ -39,8 +40,8 @@ class ClientRegistrationConfig {
                         .requireAuthorizationConsent(false)
                         .build())
                 .tokenSettings(TokenSettings.builder()
-                        .accessTokenTimeToLive(props.accessTokenTtl())
-                        .refreshTokenTimeToLive(props.refreshTokenTtl())
+                        .accessTokenTimeToLive(tokens.accessTtl())
+                        .refreshTokenTimeToLive(tokens.refreshTtl())
                         // Rotate refresh tokens: each use returns a new one, so a stolen token works at most once.
                         .reuseRefreshTokens(false)
                         .idTokenSignatureAlgorithm(SignatureAlgorithm.ES256)
