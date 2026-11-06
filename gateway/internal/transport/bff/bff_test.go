@@ -21,7 +21,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-func TestBrowserLoginThenMeThenLogout(t *testing.T) {
+func TestBrowserLoginThenUserThenLogout(t *testing.T) {
 	gw := newGateway(t)
 	browser := gw.newBrowser(t)
 
@@ -44,6 +44,13 @@ func TestBrowserLoginThenMeThenLogout(t *testing.T) {
 	auth, cookie := gw.upstream.last()
 	if !strings.HasPrefix(auth, "Bearer ey") || cookie != "" {
 		t.Fatalf("upstream must get a bearer token and no cookies, got auth=%q cookie=%q", auth, cookie)
+	}
+
+	if res = browser.send(t, http.MethodGet, "/bff/logout", nil); res.StatusCode != http.StatusOK {
+		t.Fatalf("GET logout: want the confirmation form, got %d", res.StatusCode)
+	}
+	if res = browser.send(t, http.MethodGet, "/bff/user", nil); res.StatusCode != http.StatusOK {
+		t.Fatalf("GET logout must not end the session, got %d", res.StatusCode)
 	}
 
 	res = browser.send(t, http.MethodPost, "/bff/logout", nil)
@@ -99,6 +106,18 @@ func TestBearerTokensMustBeAccessTokens(t *testing.T) {
 	res := client.send(t, http.MethodGet, "/bff/user", bearer(idTokenShaped))
 	if res.StatusCode != http.StatusUnauthorized || res.Header.Get("WWW-Authenticate") != "Bearer" {
 		t.Fatalf("typ JWT: want 401 with WWW-Authenticate, got %d", res.StatusCode)
+	}
+}
+
+func TestHideCookiesKeepsOnlyTheUpstreamsOwnCookies(t *testing.T) {
+	up := &upstream{}
+	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	req.Header.Set("Cookie", "JSESSIONID=abc; "+sessionCookie+"=secret; "+loginCookie+"=pending")
+
+	HideCookies(up).ServeHTTP(httptest.NewRecorder(), req)
+
+	if _, cookie := up.last(); cookie != "JSESSIONID=abc" {
+		t.Fatalf("want only auth's cookie upstream, got %q", cookie)
 	}
 }
 

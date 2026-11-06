@@ -2,14 +2,31 @@ package bff
 
 import (
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 )
 
-// The __Host- prefix makes browsers refuse these cookies unless Secure, Path=/ and host-only.
+// cookiePrefix marks the gateway's cookies; __Host- makes browsers demand Secure, Path=/ and host-only.
 const (
-	loginCookie   = "__Host-gw-login"
-	sessionCookie = "__Host-gw-session"
+	cookiePrefix  = "__Host-gw-"
+	loginCookie   = cookiePrefix + "login"
+	sessionCookie = cookiePrefix + "session"
 )
+
+// HideCookies drops the gateway's cookies before proxying, so auth never sees a session id but keeps its own.
+func HideCookies(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		kept := slices.DeleteFunc(r.Cookies(), func(c *http.Cookie) bool {
+			return strings.HasPrefix(c.Name, cookiePrefix)
+		})
+		r.Header.Del("Cookie")
+		for _, c := range kept {
+			r.AddCookie(c)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 
 // setCookie uses SameSite=Lax because the callback arrives as a top-level redirect from auth.
 func setCookie(w http.ResponseWriter, name, value string, maxAge time.Duration) {

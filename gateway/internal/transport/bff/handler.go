@@ -24,11 +24,11 @@ func New(svc *app.Service, log *slog.Logger) *Handler {
 	return &Handler{svc: svc, log: log}
 }
 
-// Register adds the /bff routes; logout answers GET for a plain link and POST for a form.
+// Register adds the /bff routes; logout changes state, so GET only shows a form and POST does it.
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /bff/login", h.login)
 	mux.HandleFunc("GET /bff/callback", h.callback)
-	mux.HandleFunc("GET /bff/logout", h.logout)
+	mux.HandleFunc("GET /bff/logout", h.logoutPage)
 	mux.HandleFunc("POST /bff/logout", h.logout)
 	mux.HandleFunc("GET /bff/logged-out", h.loggedOut)
 }
@@ -69,6 +69,17 @@ func (h *Handler) callback(w http.ResponseWriter, r *http.Request) {
 	setCookie(w, sessionCookie, id, ttl)
 	http.Redirect(w, r, afterLoginPath, http.StatusSeeOther)
 }
+
+// logoutPage exists because a cross-site link can trigger a GET, which must never end a session.
+func (h *Handler) logoutPage(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte(logoutForm))
+}
+
+const logoutForm = `<!doctype html>
+<title>Log out</title>
+<form method="post" action="/bff/logout"><button type="submit">Log out</button></form>
+`
 
 func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 	target := "/bff/logged-out"
