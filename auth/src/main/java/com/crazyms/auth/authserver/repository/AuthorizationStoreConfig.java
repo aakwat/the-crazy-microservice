@@ -9,18 +9,19 @@ import org.springframework.security.oauth2.server.authorization.OAuth2Authorizat
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 
-/** In-memory stores lose in-flight logins when a request lands on another replica; these share state via Postgres. */
+/** Postgres-backed stores, so a login can continue on any replica. */
 @Configuration(proxyBeanMethods = false)
 class AuthorizationStoreConfig {
 
-    @Bean
-    OAuth2AuthorizationService authorizationService(JdbcOperations jdbc, RegisteredClientRepository clients) {
-        return new JdbcOAuth2AuthorizationService(jdbc, clients);
-    }
+  @Bean
+  OAuth2AuthorizationService authorizationService(
+      JdbcOperations jdbc, RegisteredClientRepository clients) {
+    return new JdbcOAuth2AuthorizationService(jdbc, clients);
+  }
 
-    @Bean
-    OAuth2AuthorizationConsentService authorizationConsentService(
-            JdbcOperations jdbc, RegisteredClientRepository clients) {
-        return new JdbcOAuth2AuthorizationConsentService(jdbc, clients);
-    }
+  @Bean
+  OAuth2AuthorizationConsentService authorizationConsentService(
+      JdbcOperations jdbc, RegisteredClientRepository clients) {
+    return new JdbcOAuth2AuthorizationConsentService(jdbc, clients);
+  }
 }

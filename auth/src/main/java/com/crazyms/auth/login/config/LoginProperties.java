@@ -11,5 +11,5 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties("auth.login")
 public record LoginProperties(@NotNull @Valid Lockout lockout, @NotNull Duration attemptRetention) {
 
-    public record Lockout(@Min(1) int maxFailures, @NotNull Duration duration) {}
+  public record Lockout(@Min(1) int maxFailures, @NotNull Duration duration) {}
 }

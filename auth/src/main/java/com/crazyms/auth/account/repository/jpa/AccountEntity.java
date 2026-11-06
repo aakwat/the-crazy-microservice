@@ -15,56 +15,54 @@ import org.springframework.data.domain.Persistable;
 @Table(name = "account")
 public class AccountEntity implements Persistable<UUID> {
 
-    @Id
-    private UUID id;
+  @Id private UUID id;
 
-    @Column(nullable = false)
-    private String email;
+  @Column(nullable = false)
+  private String email;
 
-    @Column(nullable = false)
-    private String role;
+  @Column(nullable = false)
+  private String role;
 
-    @Column(name = "created_at", nullable = false)
-    private Instant createdAt;
+  @Column(name = "created_at", nullable = false)
+  private Instant createdAt;
 
-    // Ids are assigned in code, so Spring Data cannot infer newness from a null id; without this save() merges.
-    @Transient
-    private boolean isNew = true;
+  // Ids are assigned in code; without this flag Spring Data's save() would merge.
+  @Transient private boolean isNew = true;
 
-    protected AccountEntity() {}
+  protected AccountEntity() {}
 
-    public AccountEntity(UUID id, String email, String role, Instant createdAt) {
-        this.id = id;
-        this.email = email;
-        this.role = role;
-        this.createdAt = createdAt;
-    }
+  public AccountEntity(UUID id, String email, String role, Instant createdAt) {
+    this.id = id;
+    this.email = email;
+    this.role = role;
+    this.createdAt = createdAt;
+  }
 
-    @PostLoad
-    @PostPersist
-    void markNotNew() {
-        isNew = false;
-    }
+  @PostLoad
+  @PostPersist
+  void markNotNew() {
+    isNew = false;
+  }
 
-    @Override
-    public UUID getId() {
-        return id;
-    }
+  @Override
+  public UUID getId() {
+    return id;
+  }
 
-    @Override
-    public boolean isNew() {
-        return isNew;
-    }
+  @Override
+  public boolean isNew() {
+    return isNew;
+  }
 
-    public String getEmail() {
-        return email;
-    }
+  public String getEmail() {
+    return email;
+  }
 
-    public String getRole() {
-        return role;
-    }
+  public String getRole() {
+    return role;
+  }
 
-    public Instant getCreatedAt() {
-        return createdAt;
-    }
+  public Instant getCreatedAt() {
+    return createdAt;
+  }
 }

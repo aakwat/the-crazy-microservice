@@ -10,13 +10,15 @@ import java.security.GeneralSecurityException;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/** The only place that knows where signing keys live; moving to a KMS or Vault means replacing just this class. */
+/** The only place that knows where signing keys live; a KMS or Vault replaces just this. */
 @Configuration(proxyBeanMethods = false)
 class SigningKeyConfig {
 
-    // Loaded, never generated: every replica must sign with, and publish, the same key.
-    @Bean
-    JWKSource<SecurityContext> jwkSource(KeyProperties keys) throws IOException, GeneralSecurityException, JOSEException {
-        return new ImmutableJWKSet<>(new JWKSet(PemKeyPair.load(keys.privatePath(), keys.publicPath())));
-    }
+  // Loaded, never generated: every replica must sign with, and publish, the same key.
+  @Bean
+  JWKSource<SecurityContext> jwkSource(KeyProperties keys)
+      throws IOException, GeneralSecurityException, JOSEException {
+    return new ImmutableJWKSet<>(
+        new JWKSet(PemKeyPair.load(keys.privatePath(), keys.publicPath())));
+  }
 }

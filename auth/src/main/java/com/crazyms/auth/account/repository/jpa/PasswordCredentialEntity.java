@@ -15,48 +15,47 @@ import org.springframework.data.domain.Persistable;
 @Table(name = "account_password_credential")
 public class PasswordCredentialEntity implements Persistable<UUID> {
 
-    @Id
-    @Column(name = "account_id")
-    private UUID accountId;
+  @Id
+  @Column(name = "account_id")
+  private UUID accountId;
 
-    @Column(name = "password_hash", nullable = false)
-    private String passwordHash;
+  @Column(name = "password_hash", nullable = false)
+  private String passwordHash;
 
-    // Read-only here: only the atomic updates in PasswordCredentialJpaRepository change lockout state.
-    @Column(name = "locked_until", insertable = false, updatable = false)
-    private Instant lockedUntil;
+  // Read-only here: only the repository's atomic updates change lockout state.
+  @Column(name = "locked_until", insertable = false, updatable = false)
+  private Instant lockedUntil;
 
-    @Transient
-    private boolean isNew = true;
+  @Transient private boolean isNew = true;
 
-    protected PasswordCredentialEntity() {}
+  protected PasswordCredentialEntity() {}
 
-    public PasswordCredentialEntity(UUID accountId, String passwordHash) {
-        this.accountId = accountId;
-        this.passwordHash = passwordHash;
-    }
+  public PasswordCredentialEntity(UUID accountId, String passwordHash) {
+    this.accountId = accountId;
+    this.passwordHash = passwordHash;
+  }
 
-    @PostLoad
-    @PostPersist
-    void markNotNew() {
-        isNew = false;
-    }
+  @PostLoad
+  @PostPersist
+  void markNotNew() {
+    isNew = false;
+  }
 
-    @Override
-    public UUID getId() {
-        return accountId;
-    }
+  @Override
+  public UUID getId() {
+    return accountId;
+  }
 
-    @Override
-    public boolean isNew() {
-        return isNew;
-    }
+  @Override
+  public boolean isNew() {
+    return isNew;
+  }
 
-    public String getPasswordHash() {
-        return passwordHash;
-    }
+  public String getPasswordHash() {
+    return passwordHash;
+  }
 
-    public Instant getLockedUntil() {
-        return lockedUntil;
-    }
+  public Instant getLockedUntil() {
+    return lockedUntil;
+  }
 }

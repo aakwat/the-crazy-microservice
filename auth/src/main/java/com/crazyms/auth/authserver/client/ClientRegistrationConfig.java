@@ -14,38 +14,42 @@ import org.springframework.security.oauth2.server.authorization.client.Registere
 import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
 import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
 
-/** Clients come from config, identical on every replica, so an in-memory repository is safe to scale. */
+/** Clients come from config, identical on every replica, so in-memory storage scales. */
 @Configuration(proxyBeanMethods = false)
 class ClientRegistrationConfig {
 
-    @Bean
-    RegisteredClientRepository registeredClientRepository(
-            ClientProperties clients, TokenProperties tokens, PasswordEncoder encoder) {
-        return new InMemoryRegisteredClientRepository(
-                clients.registrations().stream().map(c -> toRegisteredClient(c, tokens, encoder)).toList());
-    }
+  @Bean
+  RegisteredClientRepository registeredClientRepository(
+      ClientProperties clients, TokenProperties tokens, PasswordEncoder encoder) {
+    return new InMemoryRegisteredClientRepository(
+        clients.registrations().stream().map(c -> toRegisteredClient(c, tokens, encoder)).toList());
+  }
 
-    private static RegisteredClient toRegisteredClient(Registration c, TokenProperties tokens, PasswordEncoder encoder) {
-        // The internal id must match across replicas: stored authorizations reference it.
-        var builder = RegisteredClient.withId(c.id())
-                .clientId(c.id())
-                .clientSecret(encoder.encode(c.secret()))
-                .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC);
-        c.grantTypes().forEach(g -> builder.authorizationGrantType(new AuthorizationGrantType(g)));
-        c.redirectUris().forEach(builder::redirectUri);
-        c.scopes().forEach(builder::scope);
-        return builder
-                .clientSettings(ClientSettings.builder()
-                        .requireProofKey(true)
-                        .requireAuthorizationConsent(false)
-                        .build())
-                .tokenSettings(TokenSettings.builder()
-                        .accessTokenTimeToLive(tokens.accessTtl())
-                        .refreshTokenTimeToLive(tokens.refreshTtl())
-                        // Rotate refresh tokens: each use returns a new one, so a stolen token works at most once.
-                        .reuseRefreshTokens(false)
-                        .idTokenSignatureAlgorithm(SignatureAlgorithm.ES256)
-                        .build())
-                .build();
-    }
+  private static RegisteredClient toRegisteredClient(
+      Registration c, TokenProperties tokens, PasswordEncoder encoder) {
+    // The internal id must match across replicas: stored authorizations reference it.
+    var builder =
+        RegisteredClient.withId(c.id())
+            .clientId(c.id())
+            .clientSecret(encoder.encode(c.secret()))
+            .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC);
+    c.grantTypes().forEach(g -> builder.authorizationGrantType(new AuthorizationGrantType(g)));
+    c.redirectUris().forEach(builder::redirectUri);
+    c.scopes().forEach(builder::scope);
+    return builder
+        .clientSettings(
+            ClientSettings.builder()
+                .requireProofKey(true)
+                .requireAuthorizationConsent(false)
+                .build())
+        .tokenSettings(
+            TokenSettings.builder()
+                .accessTokenTimeToLive(tokens.accessTtl())
+                .refreshTokenTimeToLive(tokens.refreshTtl())
+                // Rotation: each use returns a new token, so a stolen one works at most once.
+                .reuseRefreshTokens(false)
+                .idTokenSignatureAlgorithm(SignatureAlgorithm.ES256)
+                .build())
+        .build();
+  }
 }

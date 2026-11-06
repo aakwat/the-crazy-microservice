@@ -14,40 +14,41 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
-/** Turns form-login events into login outcomes; OAuth client authentication at the token endpoint is not one. */
+/** Turns form-login events into login outcomes; OAuth client authentication is not one. */
 @Component
 class LoginEventListener {
 
-    private final LoginAttemptService attempts;
+  private final LoginAttemptService attempts;
 
-    LoginEventListener(LoginAttemptService attempts) {
-        this.attempts = attempts;
-    }
+  LoginEventListener(LoginAttemptService attempts) {
+    this.attempts = attempts;
+  }
 
-    @EventListener
-    void onSuccess(AuthenticationSuccessEvent event) {
-        if (event.getAuthentication() instanceof UsernamePasswordAuthenticationToken auth
-                && auth.getPrincipal() instanceof UserDetails user) {
-            String typed = request().map(r -> r.getParameter("username")).orElse(user.getUsername());
-            attempts.recordSuccess(UUID.fromString(user.getUsername()), typed, client());
-        }
+  @EventListener
+  void onSuccess(AuthenticationSuccessEvent event) {
+    if (event.getAuthentication() instanceof UsernamePasswordAuthenticationToken auth
+        && auth.getPrincipal() instanceof UserDetails user) {
+      String typed = request().map(r -> r.getParameter("username")).orElse(user.getUsername());
+      attempts.recordSuccess(UUID.fromString(user.getUsername()), typed, client());
     }
+  }
 
-    @EventListener
-    void onFailure(AbstractAuthenticationFailureEvent event) {
-        if (event.getAuthentication() instanceof UsernamePasswordAuthenticationToken auth) {
-            attempts.recordFailure(auth.getName(), client());
-        }
+  @EventListener
+  void onFailure(AbstractAuthenticationFailureEvent event) {
+    if (event.getAuthentication() instanceof UsernamePasswordAuthenticationToken auth) {
+      attempts.recordFailure(auth.getName(), client());
     }
+  }
 
-    private static ClientInfo client() {
-        return request().map(r -> new ClientInfo(r.getRemoteAddr(), r.getHeader("User-Agent")))
-                .orElse(ClientInfo.UNKNOWN);
-    }
+  private static ClientInfo client() {
+    return request()
+        .map(r -> new ClientInfo(r.getRemoteAddr(), r.getHeader("User-Agent")))
+        .orElse(ClientInfo.UNKNOWN);
+  }
 
-    private static Optional<HttpServletRequest> request() {
-        return RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attrs
-                ? Optional.of(attrs.getRequest())
-                : Optional.empty();
-    }
+  private static Optional<HttpServletRequest> request() {
+    return RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attrs
+        ? Optional.of(attrs.getRequest())
+        : Optional.empty();
+  }
 }

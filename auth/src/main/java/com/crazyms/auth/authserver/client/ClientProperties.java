@@ -12,16 +12,16 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties("auth.client")
 record ClientProperties(@NotEmpty List<@Valid Registration> registrations) {
 
-    /** One OAuth client of the deploying project, e.g. its gateway (browser login) or a worker (service token). */
-    record Registration(
-            @NotBlank String id,
-            @NotBlank String secret,
-            @NotEmpty Set<String> grantTypes,
-            Set<String> redirectUris,
-            @NotEmpty Set<String> scopes) {
+  /** One OAuth client: e.g. the gateway (browser login) or a worker (service token). */
+  record Registration(
+      @NotBlank String id,
+      @NotBlank String secret,
+      @NotEmpty Set<String> grantTypes,
+      Set<String> redirectUris,
+      @NotEmpty Set<String> scopes) {
 
-        Registration {
-            redirectUris = redirectUris == null ? Set.of() : redirectUris;
-        }
+    Registration {
+      redirectUris = redirectUris == null ? Set.of() : redirectUris;
     }
+  }
 }

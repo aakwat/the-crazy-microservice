@@ -7,25 +7,25 @@ import org.springframework.security.oauth2.server.authorization.token.JwtEncodin
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
 import org.springframework.stereotype.Component;
 
-/** The single customizer SAS accepts: signs everything ES256 and hands each token type to its claims policy. */
+/** SAS takes one customizer: it signs ES256 and delegates each token type's claims. */
 @Component
 class TokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingContext> {
 
-    private final AccessTokenClaims accessTokenClaims;
-    private final IdTokenClaims idTokenClaims;
+  private final AccessTokenClaims accessTokenClaims;
+  private final IdTokenClaims idTokenClaims;
 
-    TokenCustomizer(AccessTokenClaims accessTokenClaims, IdTokenClaims idTokenClaims) {
-        this.accessTokenClaims = accessTokenClaims;
-        this.idTokenClaims = idTokenClaims;
-    }
+  TokenCustomizer(AccessTokenClaims accessTokenClaims, IdTokenClaims idTokenClaims) {
+    this.accessTokenClaims = accessTokenClaims;
+    this.idTokenClaims = idTokenClaims;
+  }
 
-    @Override
-    public void customize(JwtEncodingContext context) {
-        context.getJwsHeader().algorithm(SignatureAlgorithm.ES256);
-        if (OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType())) {
-            accessTokenClaims.apply(context);
-        } else if (OidcParameterNames.ID_TOKEN.equals(context.getTokenType().getValue())) {
-            idTokenClaims.apply(context);
-        }
+  @Override
+  public void customize(JwtEncodingContext context) {
+    context.getJwsHeader().algorithm(SignatureAlgorithm.ES256);
+    if (OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType())) {
+      accessTokenClaims.apply(context);
+    } else if (OidcParameterNames.ID_TOKEN.equals(context.getTokenType().getValue())) {
+      idTokenClaims.apply(context);
     }
+  }
 }

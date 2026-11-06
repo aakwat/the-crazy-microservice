@@ -12,31 +12,31 @@ import org.springframework.stereotype.Repository;
 @Repository
 class JpaPasswordCredentialRepository implements PasswordCredentialRepository {
 
-    private final PasswordCredentialJpaRepository jpa;
+  private final PasswordCredentialJpaRepository jpa;
 
-    JpaPasswordCredentialRepository(PasswordCredentialJpaRepository jpa) {
-        this.jpa = jpa;
-    }
+  JpaPasswordCredentialRepository(PasswordCredentialJpaRepository jpa) {
+    this.jpa = jpa;
+  }
 
-    @Override
-    public void insert(PasswordCredential credential) {
-        jpa.saveAndFlush(new PasswordCredentialEntity(credential.accountId(), credential.passwordHash()));
-    }
+  @Override
+  public void insert(PasswordCredential credential) {
+    jpa.saveAndFlush(
+        new PasswordCredentialEntity(credential.accountId(), credential.passwordHash()));
+  }
 
-    @Override
-    public Optional<PasswordCredential> findByAccountId(UUID accountId) {
-        return jpa.findById(accountId)
-                .map(e -> new PasswordCredential(e.getId(), e.getPasswordHash(), e.getLockedUntil()));
-    }
+  @Override
+  public Optional<PasswordCredential> findByAccountId(UUID accountId) {
+    return jpa.findById(accountId)
+        .map(e -> new PasswordCredential(e.getId(), e.getPasswordHash(), e.getLockedUntil()));
+  }
 
+  @Override
+  public void recordFailedLogin(UUID accountId, int maxFailures, Instant lockUntil, Instant now) {
+    jpa.recordFailedLogin(accountId, maxFailures, lockUntil, now);
+  }
 
-    @Override
-    public void recordFailedLogin(UUID accountId, int maxFailures, Instant lockUntil, Instant now) {
-        jpa.recordFailedLogin(accountId, maxFailures, lockUntil, now);
-    }
-
-    @Override
-    public void clearFailedLogins(UUID accountId, Instant now) {
-        jpa.clearFailedLogins(accountId, now);
-    }
+  @Override
+  public void clearFailedLogins(UUID accountId, Instant now) {
+    jpa.clearFailedLogins(accountId, now);
+  }
 }

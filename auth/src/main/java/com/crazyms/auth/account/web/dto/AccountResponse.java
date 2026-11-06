@@ -5,7 +5,7 @@ import java.util.UUID;
 
 public record AccountResponse(UUID id, String email, String role) {
 
-    public static AccountResponse from(Account account) {
-        return new AccountResponse(account.id(), account.email(), account.role().name());
-    }
+  public static AccountResponse from(Account account) {
+    return new AccountResponse(account.id(), account.email(), account.role().name());
+  }
 }

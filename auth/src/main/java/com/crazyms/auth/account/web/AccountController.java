@@ -11,20 +11,20 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Self-service sign-up; everything token-related is the authorization server's standard endpoints. */
+/** Self-service sign-up; all token work uses the standard OAuth endpoints. */
 @RestController
 @RequestMapping("/auth")
 class AccountController {
 
-    private final AccountService accounts;
+  private final AccountService accounts;
 
-    AccountController(AccountService accounts) {
-        this.accounts = accounts;
-    }
+  AccountController(AccountService accounts) {
+    this.accounts = accounts;
+  }
 
-    @PostMapping("/register")
-    @ResponseStatus(HttpStatus.CREATED)
-    AccountResponse register(@Valid @RequestBody RegisterRequest request) {
-        return AccountResponse.from(accounts.register(request.email(), request.password()));
-    }
+  @PostMapping("/register")
+  @ResponseStatus(HttpStatus.CREATED)
+  AccountResponse register(@Valid @RequestBody RegisterRequest request) {
+    return AccountResponse.from(accounts.register(request.email(), request.password()));
+  }
 }

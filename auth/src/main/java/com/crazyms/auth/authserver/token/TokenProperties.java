@@ -8,4 +8,5 @@ import org.springframework.validation.annotation.Validated;
 
 @Validated
 @ConfigurationProperties("auth.token")
-public record TokenProperties(@NotBlank String audience, @NotNull Duration accessTtl, @NotNull Duration refreshTtl) {}
+public record TokenProperties(
+    @NotBlank String audience, @NotNull Duration accessTtl, @NotNull Duration refreshTtl) {}

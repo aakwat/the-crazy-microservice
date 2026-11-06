@@ -16,20 +16,23 @@ import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
 
-/** How this server verifies its own access tokens (for /userinfo): the same checks every other service applies. */
+/** Verifies this server's own access tokens (for /userinfo) the way every service does. */
 @Configuration(proxyBeanMethods = false)
 class JwtDecoderConfig {
 
-    @Bean
-    JwtDecoder jwtDecoder(JWKSource<SecurityContext> jwkSource, AuthorizationServerSettings settings,
-            TokenProperties tokens) {
-        var processor = new DefaultJWTProcessor<SecurityContext>();
-        processor.setJWSKeySelector(new JWSVerificationKeySelector<>(JWSAlgorithm.ES256, jwkSource));
-        var decoder = new NimbusJwtDecoder(processor);
-        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
-                JwtValidators.createDefaultWithIssuer(settings.getIssuer()),
-                new JwtClaimValidator<List<String>>(JwtClaimNames.AUD,
-                        aud -> aud != null && aud.contains(tokens.audience()))));
-        return decoder;
-    }
+  @Bean
+  JwtDecoder jwtDecoder(
+      JWKSource<SecurityContext> jwkSource,
+      AuthorizationServerSettings settings,
+      TokenProperties tokens) {
+    var processor = new DefaultJWTProcessor<SecurityContext>();
+    processor.setJWSKeySelector(new JWSVerificationKeySelector<>(JWSAlgorithm.ES256, jwkSource));
+    var decoder = new NimbusJwtDecoder(processor);
+    decoder.setJwtValidator(
+        new DelegatingOAuth2TokenValidator<>(
+            JwtValidators.createDefaultWithIssuer(settings.getIssuer()),
+            new JwtClaimValidator<List<String>>(
+                JwtClaimNames.AUD, aud -> aud != null && aud.contains(tokens.audience()))));
+    return decoder;
+  }
 }

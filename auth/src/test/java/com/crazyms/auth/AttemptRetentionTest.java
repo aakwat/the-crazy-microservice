@@ -15,38 +15,44 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 
 class AttemptRetentionTest extends AuthTestSupport {
 
-    @Autowired
-    AttemptRetention retention;
+  @Autowired AttemptRetention retention;
 
-    @Autowired
-    AuthenticationAttemptRepository attempts;
+  @Autowired AuthenticationAttemptRepository attempts;
 
-    @Autowired
-    JdbcClient jdbc;
+  @Autowired JdbcClient jdbc;
 
-    @Autowired
-    Clock clock;
+  @Autowired Clock clock;
 
-    @Test
-    void purgesOnlyAttemptsOlderThanTheRetention() {
-        String expired = uniqueEmail();
-        String recent = uniqueEmail();
-        var now = clock.instant();
-        attempts.insert(AuthenticationAttempt.failed(expired, null, FailureReason.UNKNOWN_IDENTIFIER, ClientInfo.UNKNOWN,
-                now.minus(Duration.ofDays(91))));
-        attempts.insert(AuthenticationAttempt.failed(recent, null, FailureReason.UNKNOWN_IDENTIFIER, ClientInfo.UNKNOWN,
-                now.minus(Duration.ofDays(89))));
+  @Test
+  void purgesOnlyAttemptsOlderThanTheRetention() {
+    String expired = uniqueEmail();
+    String recent = uniqueEmail();
+    var now = clock.instant();
+    attempts.insert(
+        AuthenticationAttempt.failed(
+            expired,
+            null,
+            FailureReason.UNKNOWN_IDENTIFIER,
+            ClientInfo.UNKNOWN,
+            now.minus(Duration.ofDays(91))));
+    attempts.insert(
+        AuthenticationAttempt.failed(
+            recent,
+            null,
+            FailureReason.UNKNOWN_IDENTIFIER,
+            ClientInfo.UNKNOWN,
+            now.minus(Duration.ofDays(89))));
 
-        assertThat(retention.purgeExpired()).isPositive();
+    assertThat(retention.purgeExpired()).isPositive();
 
-        assertThat(count(expired)).isZero();
-        assertThat(count(recent)).isOne();
-    }
+    assertThat(count(expired)).isZero();
+    assertThat(count(recent)).isOne();
+  }
 
-    private long count(String identifier) {
-        return jdbc.sql("SELECT COUNT(*) FROM authentication_attempts WHERE submitted_identifier = :id")
-                .param("id", identifier)
-                .query(Long.class)
-                .single();
-    }
+  private long count(String identifier) {
+    return jdbc.sql("SELECT COUNT(*) FROM authentication_attempts WHERE submitted_identifier = :id")
+        .param("id", identifier)
+        .query(Long.class)
+        .single();
+  }
 }

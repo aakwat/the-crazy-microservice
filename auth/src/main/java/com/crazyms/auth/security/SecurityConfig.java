@@ -15,24 +15,27 @@ import org.springframework.security.web.SecurityFilterChain;
 @Configuration(proxyBeanMethods = false)
 class SecurityConfig {
 
-    @Bean
-    @Order(2)
-    SecurityFilterChain applicationChain(HttpSecurity http) throws Exception {
-        return http
-                .authorizeHttpRequests(auth -> auth
-                        .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
-                        .requestMatchers(HttpMethod.POST, "/auth/register").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/actuator/health/**").permitAll()
-                        .anyRequest().authenticated())
-                .formLogin(Customizer.withDefaults())
-                // Sign-up is a JSON API that neither reads nor sets the session cookie, so CSRF cannot ride on it.
-                .csrf(csrf -> csrf.ignoringRequestMatchers("/auth/register"))
-                .build();
-    }
+  @Bean
+  @Order(2)
+  SecurityFilterChain applicationChain(HttpSecurity http) throws Exception {
+    return http.authorizeHttpRequests(auth ->
+            auth.dispatcherTypeMatchers(DispatcherType.ERROR)
+                .permitAll()
+                .requestMatchers(HttpMethod.POST, "/auth/register")
+                .permitAll()
+                .requestMatchers(HttpMethod.GET, "/actuator/health/**")
+                .permitAll()
+                .anyRequest()
+                .authenticated())
+        .formLogin(Customizer.withDefaults())
+        // Sign-up is JSON and never uses the session cookie, so CSRF cannot ride on it.
+        .csrf(csrf -> csrf.ignoringRequestMatchers("/auth/register"))
+        .build();
+  }
 
-    @Bean
-    PasswordEncoder passwordEncoder() {
-        // OWASP minimum for Argon2id: 19 MiB memory, 2 iterations, parallelism 1.
-        return new Argon2PasswordEncoder(16, 32, 1, 19 * 1024, 2);
-    }
+  @Bean
+  PasswordEncoder passwordEncoder() {
+    // OWASP minimum for Argon2id: 19 MiB memory, 2 iterations, parallelism 1.
+    return new Argon2PasswordEncoder(16, 32, 1, 19 * 1024, 2);
+  }
 }
