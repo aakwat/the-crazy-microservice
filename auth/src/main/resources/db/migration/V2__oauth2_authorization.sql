@@ -41,6 +41,10 @@ CREATE INDEX idx_oauth2_authorization_code     ON oauth2_authorization USING HAS
 CREATE INDEX idx_oauth2_authorization_access   ON oauth2_authorization USING HASH (access_token_value);
 CREATE INDEX idx_oauth2_authorization_refresh  ON oauth2_authorization USING HASH (refresh_token_value);
 CREATE INDEX idx_oauth2_authorization_id_token ON oauth2_authorization USING HASH (oidc_id_token_value);
+-- The purge finds dead rows by their latest expiry, which none of the hash indexes above can serve.
+CREATE INDEX idx_oauth2_authorization_expires ON oauth2_authorization ((GREATEST(
+  authorization_code_expires_at, access_token_expires_at, refresh_token_expires_at,
+  oidc_id_token_expires_at, user_code_expires_at, device_code_expires_at)));
 
 CREATE TABLE oauth2_authorization_consent (
   registered_client_id VARCHAR(100)  NOT NULL,

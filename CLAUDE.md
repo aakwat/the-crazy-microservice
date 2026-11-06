@@ -128,7 +128,9 @@ the same script, connecting as `_app` and migrating as `_migrator`.
   indent, aligned columns, `idx_<table>_<what>` index names.
 - Identity and credentials are separate tables (`account`,
   `account_password_credential`); append-only logs (`authentication_attempts`)
-  ship with their retention sweep and the index that serves it.
+  ship with their retention sweep and the index that serves it. SAS never deletes
+  `oauth2_authorization` rows, so `AuthorizationRetention` purges those whose latest
+  token expiry has passed.
 - Ids are native `uuid` v7 assigned in the domain, `DEFAULT uuidv7()` as fallback.
   Invariants are also DB constraints. Hibernate runs with `ddl-auto=validate`.
 - Until the first real deployment, fold schema changes into the migration that
@@ -153,7 +155,8 @@ cd auth; mvn test -Dtest=AuthorizationCodeFlowTest#refreshTokensRotateAndCannotB
 ```
 
 Use `clean` after deleting or renaming a test: stale classes in
-`target/test-classes` otherwise keep running.
+`target/test-classes` otherwise keep running. Java formatting is palantir-java-format via Spotless, applied
+on every build (`process-sources`); never format by hand, and run `mvn spotless:apply` to format alone.
 
 Auth layout, one module per responsibility, each `config/ domain/ service/
 repository/ web/` as needed:
