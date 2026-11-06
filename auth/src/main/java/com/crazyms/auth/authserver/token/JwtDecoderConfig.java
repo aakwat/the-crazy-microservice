@@ -1,16 +1,14 @@
 package com.crazyms.auth.authserver.token;
 
+import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.source.JWKSource;
+import com.nimbusds.jose.proc.DefaultJOSEObjectTypeVerifier;
 import com.nimbusds.jose.proc.JWSVerificationKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jwt.proc.DefaultJWTProcessor;
-import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
-import org.springframework.security.oauth2.jwt.JwtClaimNames;
-import org.springframework.security.oauth2.jwt.JwtClaimValidator;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
@@ -27,12 +25,15 @@ class JwtDecoderConfig {
       TokenProperties tokens) {
     var processor = new DefaultJWTProcessor<SecurityContext>();
     processor.setJWSKeySelector(new JWSVerificationKeySelector<>(JWSAlgorithm.ES256, jwkSource));
+    processor.setJWSTypeVerifier(
+        new DefaultJOSEObjectTypeVerifier<>(new JOSEObjectType(TokenCustomizer.ACCESS_TOKEN_TYPE)));
     var decoder = new NimbusJwtDecoder(processor);
+    // RFC 9068 profile: typ at+jwt, issuer, audience, timestamps and the required claims.
     decoder.setJwtValidator(
-        new DelegatingOAuth2TokenValidator<>(
-            JwtValidators.createDefaultWithIssuer(settings.getIssuer()),
-            new JwtClaimValidator<List<String>>(
-                JwtClaimNames.AUD, aud -> aud != null && aud.contains(tokens.audience()))));
+        JwtValidators.createAtJwtValidator()
+            .issuer(settings.getIssuer())
+            .audience(tokens.audience())
+            .build());
     return decoder;
   }
 }

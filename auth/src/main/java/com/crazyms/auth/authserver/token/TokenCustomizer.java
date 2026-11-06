@@ -11,6 +11,8 @@ import org.springframework.stereotype.Component;
 @Component
 class TokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingContext> {
 
+  static final String ACCESS_TOKEN_TYPE = "at+jwt";
+
   private final AccessTokenClaims accessTokenClaims;
   private final IdTokenClaims idTokenClaims;
 
@@ -23,6 +25,8 @@ class TokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingContext> {
   public void customize(JwtEncodingContext context) {
     context.getJwsHeader().algorithm(SignatureAlgorithm.ES256);
     if (OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType())) {
+      // RFC 9068: the type header is what stops an ID token being replayed as an access token.
+      context.getJwsHeader().type(ACCESS_TOKEN_TYPE);
       accessTokenClaims.apply(context);
     } else if (OidcParameterNames.ID_TOKEN.equals(context.getTokenType().getValue())) {
       idTokenClaims.apply(context);

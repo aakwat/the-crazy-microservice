@@ -43,9 +43,11 @@ PKCE with the gateway as the confidential client (BFF): the gateway owns the
 browser cookie and maps it to `Authorization` upstream; auth never hands tokens
 to the browser. Workers (jobs, ai) use `client_credentials`. Access tokens carry
 `sub` (account id, never the email, or client id), `aud` = `crazy-ms`, and
-`roles` for users. Every service verifies against cached JWKS (refetch on
-unknown `kid`); none trusts an identity header. Auth's only custom endpoint is
-`POST /auth/register`.
+`roles` for users. Access tokens follow RFC 9068: header `typ: at+jwt` plus a
+`client_id` claim. Every service verifies against cached JWKS (refetch on
+unknown `kid`) **and requires `typ: at+jwt`**, so an ID token is never accepted
+as an access token; none trusts an identity header. Auth's only custom endpoint
+is `POST /auth/register`.
 
 **Sync HTTP (JSON), kept minimal.** Only: gateway → auth, tickets (proxy) and
 → realtime (WS), services → auth JWKS, jobs and ai → tickets `GET /internal/*`

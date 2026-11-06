@@ -23,6 +23,8 @@ class AccessTokenClaims {
   void apply(JwtEncodingContext context) {
     // Resource servers check this audience, not each caller's client id.
     context.getClaims().audience(Collections.singletonList(tokens.audience()));
+    // RFC 9068 requires client_id: which client the token was issued to, separate from the user.
+    context.getClaims().claim("client_id", context.getRegisteredClient().getClientId());
     var roles =
         context.getPrincipal().getAuthorities().stream()
             .map(GrantedAuthority::getAuthority)
