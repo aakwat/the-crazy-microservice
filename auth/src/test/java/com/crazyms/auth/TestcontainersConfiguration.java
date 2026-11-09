@@ -74,6 +74,7 @@ class TestcontainersConfiguration {
     p.put("auth.client.registrations[0].grant-types[0]", "authorization_code");
     p.put("auth.client.registrations[0].grant-types[1]", "refresh_token");
     p.put("auth.client.registrations[0].redirect-uris[0]", TestClients.REDIRECT_URI);
+    p.put("auth.client.registrations[0].post-logout-redirect-uris[0]", TestClients.POST_LOGOUT_URI);
     p.put("auth.client.registrations[0].scopes[0]", "openid");
     p.put("auth.client.registrations[0].scopes[1]", "email");
     p.put("auth.client.registrations[1].id", TestClients.JOBS);

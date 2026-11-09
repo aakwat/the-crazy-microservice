@@ -9,8 +9,8 @@ services:
       AUTH_DB_MIGRATOR_USER: auth_migrator
       AUTH_PRIVATE_KEY_PATH: /run/secrets/auth_private_key
       AUTH_PUBLIC_KEY_PATH: /run/secrets/auth_public_key
-      # The iss every token carries and every service validates; auth/compose.dev.yaml overrides it.
-      AUTH_ISSUER: http://auth:8080
+      # The public origin browsers use through the gateway; every token carries it as iss.
+      AUTH_ISSUER: http://127.0.0.1:8080
       # Each file in /run/secrets becomes a property named after it, so passwords never sit in the environment.
       SPRING_CONFIG_IMPORT: configtree:/run/secrets/,file:/config/clients.yaml
     secrets:

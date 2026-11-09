@@ -35,6 +35,7 @@ class ClientRegistrationConfig {
             .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC);
     c.grantTypes().forEach(g -> builder.authorizationGrantType(new AuthorizationGrantType(g)));
     c.redirectUris().forEach(builder::redirectUri);
+    c.postLogoutRedirectUris().forEach(builder::postLogoutRedirectUri);
     c.scopes().forEach(builder::scope);
     return builder
         .clientSettings(

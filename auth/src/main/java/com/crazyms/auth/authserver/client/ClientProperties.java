@@ -18,10 +18,12 @@ record ClientProperties(@NotEmpty List<@Valid Registration> registrations) {
       @NotBlank String secret,
       @NotEmpty Set<String> grantTypes,
       Set<String> redirectUris,
+      Set<String> postLogoutRedirectUris,
       @NotEmpty Set<String> scopes) {
 
     Registration {
       redirectUris = redirectUris == null ? Set.of() : redirectUris;
+      postLogoutRedirectUris = postLogoutRedirectUris == null ? Set.of() : postLogoutRedirectUris;
     }
   }
 }

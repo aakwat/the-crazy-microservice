@@ -5,8 +5,8 @@ auth:
       - id: gateway
         secret: ${AUTH_CLIENT_GATEWAY_SECRET}
         grant-types: [authorization_code, refresh_token]
-        # Dev hand-test callback; the gateway scope replaces it with the gateway's own callback.
-        redirect-uris: [http://127.0.0.1:9999/callback]
+        redirect-uris: [http://127.0.0.1:8080/bff/callback]
+        post-logout-redirect-uris: [http://127.0.0.1:8080/bff/logged-out]
         scopes: [openid, email]
       - id: jobs
         secret: ${AUTH_CLIENT_JOBS_SECRET}

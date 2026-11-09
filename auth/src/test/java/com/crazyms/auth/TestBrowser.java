@@ -83,6 +83,10 @@ final class TestBrowser {
     return res.body();
   }
 
+  HttpResponse<String> get(String url) throws Exception {
+    return send(HttpRequest.newBuilder(URI.create(url)).GET().build());
+  }
+
   static URI location(String baseUrl, HttpResponse<?> res) {
     return URI.create(baseUrl).resolve(res.headers().firstValue("Location").orElseThrow());
   }
@@ -101,7 +105,7 @@ final class TestBrowser {
     return client.send(request, HttpResponse.BodyHandlers.ofString());
   }
 
-  private static String enc(String value) {
+  static String enc(String value) {
     return URLEncoder.encode(value, StandardCharsets.UTF_8);
   }
 }

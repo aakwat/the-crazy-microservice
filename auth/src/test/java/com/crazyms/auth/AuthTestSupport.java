@@ -53,8 +53,15 @@ abstract class AuthTestSupport {
     return postJson("/auth/register", Map.of("email", email, "password", password));
   }
 
+  record BrowserLogin(TestBrowser browser, Map<String, Object> tokens) {}
+
   /** Registers a fresh account and logs it in through the browser flow; returns the token body. */
   Map<String, Object> browserLoginTokens() throws Exception {
+    return browserLogin().tokens();
+  }
+
+  /** Like browserLoginTokens, but keeps the browser, whose auth session later requests need. */
+  BrowserLogin browserLogin() throws Exception {
     String email = uniqueEmail();
     register(email, PASSWORD);
     var browser = new TestBrowser();
@@ -62,7 +69,7 @@ abstract class AuthTestSupport {
     browser.startAuthorization(baseUrl(), pkce);
     var afterLogin = browser.submitLogin(baseUrl(), email, PASSWORD);
     String code = browser.followToCode(TestBrowser.location(baseUrl(), afterLogin));
-    return exchange(http, code, pkce.verifier()).body();
+    return new BrowserLogin(browser, exchange(http, code, pkce.verifier()).body());
   }
 
   /** POST a form to any OAuth endpoint as a confidential client (client_secret_basic). */

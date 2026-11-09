@@ -28,6 +28,10 @@ spring:
         # Fixed, not derived from the request Host, so every replica and every caller sees the same iss.
         issuer: ${AUTH_ISSUER}
 
+server:
+  # Only the gateway reaches auth, and it sets X-Forwarded-* from config, so redirects carry the public origin.
+  forward-headers-strategy: framework
+
 auth:
   account:
     default-role: ${AUTH_DEFAULT_ROLE:customer}
