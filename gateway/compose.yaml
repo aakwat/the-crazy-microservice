@@ -1,0 +1,90 @@
+# Self-contained plugin: the public gateway and the session store only it may reach.
+services:
+  gateway:
+    build: .
+    image: crazy-ms/gateway:dev
+    environment:
+      GATEWAY_PUBLIC_URL: http://127.0.0.1:8080
+      AUTH_ISSUER: http://127.0.0.1:8080
+      AUTH_INTERNAL_URL: http://auth:8080
+      GATEWAY_CLIENT_ID: gateway
+      GATEWAY_REDIS_ADDR: gateway-redis:6379
+      GATEWAY_REDIS_USER: gateway
+    secrets:
+      - GATEWAY_CLIENT_SECRET
+      - GATEWAY_REDIS_PASSWORD
+    # The project's only published port.
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      gateway-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/gateway", "healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: "0.5"
+    restart: unless-stopped
+    stop_grace_period: 15s
+    networks:
+      - edge
+      - app
+      - gateway-data
+
+  gateway-redis:
+    image: docker.io/library/redis:8.10.3-alpine@sha256:71885d8cc6e42f2bc0aa2eb853bfc4be200b5108a46ac50e117ae1df0531fb80
+    user: "999:1000"
+    # One ACL user limited to gw:* and the commands the gateway uses; only a hash of its password is written.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+          printf 'user default off\nuser gateway on #%s ~gw:* resetchannels -@all +@connection +get +set +getdel +del\n' \
+            "$$(sha256sum < /run/secrets/GATEWAY_REDIS_PASSWORD | cut -d' ' -f1)" > /tmp/users.acl
+          exec redis-server --aclfile /tmp/users.acl --dir /data --save '' --appendonly no \
+            --maxmemory 64mb --maxmemory-policy noeviction
+    secrets:
+      - GATEWAY_REDIS_PASSWORD
+    healthcheck:
+      test: [
+        "CMD-SHELL",
+        "REDISCLI_AUTH=\"$$(cat /run/secrets/GATEWAY_REDIS_PASSWORD)\" redis-cli --no-auth-warning --user gateway ping | grep -q PONG",
+      ]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    read_only: true
+    tmpfs:
+      - /data
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+    restart: unless-stopped
+    networks:
+      - gateway-data
+
+secrets:
+  GATEWAY_CLIENT_SECRET:
+    file: ./secrets/GATEWAY_CLIENT_SECRET
+  GATEWAY_REDIS_PASSWORD:
+    file: ./secrets/GATEWAY_REDIS_PASSWORD
+
+networks:
+  # The only non-internal network: it publishes the gateway's port, and so also gives it egress.
+  edge: {}
+  app:
+    internal: true
+  gateway-data:
+    internal: true

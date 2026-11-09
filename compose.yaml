@@ -3,9 +3,10 @@ name: crazy-ms
 # Each service is a plugin with its own compose file; add or remove one line to plug it in or out.
 include:
   - auth/compose.yaml
+  - gateway/compose.yaml
 
 services:
-  # Stand-in for the gateway: sits on the private app network so manual requests take the same path.
+  # curl on the private app network, for services that publish no port.
   client:
     image: docker.io/curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
     profiles: [tools]
