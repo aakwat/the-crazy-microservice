@@ -1,0 +1,41 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - errcheck
+    - gocritic
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
+    - noctx
+    - revive
+    - staticcheck
+    - unparam
+    - unused
+  settings:
+    errcheck:
+      exclude-functions:
+        # A failed close after the work is done has no useful recovery.
+        - (io.Closer).Close
+        - (io.ReadCloser).Close
+        - (*github.com/redis/go-redis/v9.Client).Close
+    gosec:
+      excludes:
+        # Sessions hold tokens server-side by design; that is what a BFF is for.
+        - G117
+  exclusions:
+    rules:
+      # httptest.NewRequest is the standard test helper, and the test client closes every body itself.
+      - path: _test\.go
+        linters: [bodyclose, noctx]
+      # Secret paths are SECRETS_DIR plus fixed names, both set by the operator, never by a client.
+      - path: cmd/gateway/config\.go
+        text: G304
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

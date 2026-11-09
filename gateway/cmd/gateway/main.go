@@ -1,7 +1,8 @@
-// Command gateway is the only public entry point: BFF login, token mapping and the proxy to private services.
+// Command gateway is the only public entry point: browser login (BFF), token mapping and a proxy to auth.
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -13,30 +14,22 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/aakwat/the-crazy-microservice/gateway/internal/adapters/oidc"
-	"github.com/aakwat/the-crazy-microservice/gateway/internal/adapters/redisstore"
-	"github.com/aakwat/the-crazy-microservice/gateway/internal/app"
-	"github.com/aakwat/the-crazy-microservice/gateway/internal/config"
-	"github.com/aakwat/the-crazy-microservice/gateway/internal/domain"
-	"github.com/aakwat/the-crazy-microservice/gateway/internal/transport/bff"
-	"github.com/aakwat/the-crazy-microservice/gateway/internal/transport/edge"
-	"github.com/aakwat/the-crazy-microservice/gateway/internal/transport/proxy"
+	"github.com/aakwat/the-crazy-microservice/gateway/internal/bff"
 	"github.com/redis/go-redis/v9"
-	"golang.org/x/time/rate"
 )
 
 const (
-	// audience is the contract every service checks in access tokens (CLAUDE.md, identity).
-	audience         = "crazy-ms"
-	maxBodyBytes     = 1 << 20
-	upstreamTimeout  = 15 * time.Second
-	authCallTimeout  = 10 * time.Second
-	shutdownGrace    = 10 * time.Second
-	registerPerMin   = 5
-	healthcheckLimit = 2 * time.Second
+	// audience is the aud every service checks in access tokens (CLAUDE.md, identity).
+	audience          = "crazy-ms"
+	defaultListen     = ":8080"
+	defaultSecretsDir = "/run/secrets"
+	maxBodyBytes      = 1 << 20
+	upstreamTimeout   = 15 * time.Second
+	authCallTimeout   = 10 * time.Second
+	shutdownGrace     = 10 * time.Second
+	registerPerMin    = 5
+	loginPerMin       = 20
 )
-
-var lifetime = domain.Lifetime{Idle: 8 * time.Hour, Absolute: 12 * time.Hour}
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
@@ -50,53 +43,42 @@ func main() {
 }
 
 func run(log *slog.Logger) error {
-	cfg, err := config.Load(os.Getenv)
+	cfg, err := loadConfig(os.Getenv)
 	if err != nil {
 		return err
 	}
-	authURL, err := url.Parse(cfg.AuthURL)
+	authURL, err := url.Parse(cfg.bff.AuthURL)
 	if err != nil {
 		return err
 	}
-	publicURL, err := url.Parse(cfg.PublicURL)
+	publicURL, err := url.Parse(cfg.bff.PublicURL)
 	if err != nil {
 		return err
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Username: cfg.RedisUser, Password: cfg.RedisPassword})
+	rdb := redis.NewClient(&redis.Options{Addr: cfg.redisAddr, Username: cfg.redisUser, Password: cfg.redisPassword})
 	defer rdb.Close()
 	if err := rdb.Ping(ctx).Err(); err != nil {
-		return fmt.Errorf("redis: %w", err)
+		return fmt.Errorf("connecting to redis: %w", err)
 	}
-
-	provider := oidc.New(ctx, oidc.Config{
-		Issuer:        cfg.Issuer,
-		InternalURL:   cfg.AuthURL,
-		ClientID:      cfg.ClientID,
-		ClientSecret:  cfg.ClientSecret,
-		RedirectURL:   cfg.PublicURL + "/bff/callback",
-		PostLogoutURL: cfg.PublicURL + "/bff/logged-out",
-		Audience:      audience,
-		HTTPClient:    authClient(),
-	})
-	svc := app.New(redisstore.New(rdb), provider, lifetime, time.Now)
-	register := edge.NewPerIP(rate.Every(time.Minute/registerPerMin), registerPerMin)
-	handler := routes(bff.New(svc, log), proxy.New(authURL, publicURL, upstreamTimeout, log), register)
+	cfg.bff.HTTPClient = authClient()
 
 	srv := &http.Server{
-		Addr:              cfg.ListenAddr,
-		Handler:           handler,
+		Addr:              cfg.listen,
+		Handler:           routes(bff.New(ctx, cfg.bff, rdb, log), newProxy(authURL, publicURL, log)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       120 * time.Second,
-		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
+		// The gateway's own cookies are small, so the 1 MiB default would only help header floods.
+		MaxHeaderBytes: 32 << 10,
+		ErrorLog:       slog.NewLogLogger(log.Handler(), slog.LevelWarn),
 	}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()
-	log.Info("gateway listening", "addr", cfg.ListenAddr)
+	log.Info("gateway listening", "addr", cfg.listen)
 
 	select {
 	case err := <-errc:
@@ -117,12 +99,17 @@ func authClient() *http.Client {
 
 // healthcheck is the container probe; the distroless image has no curl, so the binary checks itself.
 func healthcheck() int {
-	_, port, err := net.SplitHostPort(config.ListenAddr(os.Getenv))
+	_, port, err := net.SplitHostPort(listenAddr(os.Getenv))
 	if err != nil {
 		return 1
 	}
-	client := http.Client{Timeout: healthcheckLimit}
-	res, err := client.Get("http://127.0.0.1:" + port + "/healthz")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://127.0.0.1:"+port+"/healthz", nil)
+	if err != nil {
+		return 1
+	}
+	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return 1
 	}
@@ -131,4 +118,9 @@ func healthcheck() int {
 		return 1
 	}
 	return 0
+}
+
+// listenAddr is shared with healthcheck, which must probe the port the server listens on.
+func listenAddr(getenv func(string) string) string {
+	return cmp.Or(getenv("GATEWAY_LISTEN_ADDR"), defaultListen)
 }

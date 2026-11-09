@@ -14,9 +14,10 @@ const (
 	sessionCookie = cookiePrefix + "session"
 )
 
-// HideCookies drops the gateway's cookies before proxying, so auth never sees a session id but keeps its own.
-func HideCookies(next http.Handler) http.Handler {
+// StripCredentials keeps only the upstream's own cookies, so auth's pages never see a gateway session or token.
+func StripCredentials(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Header.Del("Authorization")
 		kept := slices.DeleteFunc(r.Cookies(), func(c *http.Cookie) bool {
 			return strings.HasPrefix(c.Name, cookiePrefix)
 		})

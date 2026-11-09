@@ -14,6 +14,7 @@
           # gateway, image
           go
           gopls
+          golangci-lint
           # auth; jdtls is here because neovim has mason disabled.
           jdk21
           maven
