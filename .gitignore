@@ -4,3 +4,7 @@
 *dist*
 .direnv/
 secrets/
+.classpath
+.project
+.settings/
+.factorypath
