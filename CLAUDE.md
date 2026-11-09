@@ -11,23 +11,25 @@ Polyglot support-ticket PoC. One public gateway; every other service is
 private (ClusterIP + default-deny NetworkPolicy on k3d). Every service is
 stateless so it can run as several replicas.
 
-| Service  | Lang   | Owns                                                   |
-| -------- | ------ | ------------------------------------------------------ |
-| gateway  | Go     | routing, JWT verify, WebSocket upgrade proxy           |
+| Service  | Lang   | Owns                                                    |
+| -------- | ------ | ------------------------------------------------------- |
+| gateway  | Go     | routing, JWT verify, WebSocket upgrade proxy            |
 | auth     | Java   | accounts, OIDC server (code + PKCE, client creds), JWKS |
-| tickets  | Rust   | tickets, attachment records, originals bucket, outbox  |
-| image    | Go     | thumbs bucket; worker only, no HTTP route              |
-| realtime | Node   | live sockets; pushes "ticket changed" notifications    |
-| jobs     | Python | scheduled work: SLA escalation, auto-close             |
-| ai       | Python | auto-triage of new tickets via a local model (Ollama)  |
+| tickets  | Rust   | tickets, attachment records, originals bucket, outbox   |
+| image    | Go     | thumbs bucket; worker only, no HTTP route               |
+| realtime | Node   | live sockets; pushes "ticket changed" notifications     |
+| jobs     | Python | scheduled work: SLA escalation, auto-close              |
+| ai       | Python | auto-triage of new tickets via a local model (Ollama)   |
 
 Build order, one scope at a time: auth, gateway, tickets, outbox relay,
 realtime, image, jobs, ai, k8s.
 
 Layers: L1 edge (Traefik TLS, gateway), L2 request services (auth, tickets,
 realtime), L3 messaging (Redis Streams), L4 workers (image, ai, jobs), L5 data
-(Postgres per service, MinIO, Ollama). Inside every service: transport → app
+(Postgres per service, Garage (S3), Ollama). Inside every service: transport → app
 → domain ← adapters; the domain imports no framework, DB or transport code.
+The gateway is a thin edge and keeps two layers on purpose: `cmd/gateway`
+(config, routes, proxy) and `internal/bff` (login, sessions, tokens).
 Diagrams: `docs/architecture.html`; change it with the contracts below.
 
 ### Contracts between services
@@ -58,18 +60,18 @@ retries POST. Discovery is DNS (compose / k8s Service names). No gRPC.
 **Events (Redis Streams).** Envelope:
 `{id: uuidv7, type, version, occurred_at: RFC3339, subject_id, traceparent, payload}`.
 
-| Stream               | Producer         | Consumers               |
-| -------------------- | ---------------- | ----------------------- |
-| `tickets.events`     | tickets (outbox) | realtime, ai, image     |
-| `attachments.events` | image            | tickets                 |
-| `triage.events`      | ai               | tickets                 |
-| `jobs.commands`      | jobs             | tickets                 |
+| Stream               | Producer         | Consumers           |
+| -------------------- | ---------------- | ------------------- |
+| `tickets.events`     | tickets (outbox) | realtime, ai, image |
+| `attachments.events` | image            | tickets             |
+| `triage.events`      | ai               | tickets             |
+| `jobs.commands`      | jobs             | tickets             |
 
 - Events are thin: IDs, type, status, `requester_id`, `assignee_id`. Never
   ticket text or other personal data (GDPR minimisation); fetch it from
   tickets `/internal` if needed.
 - Only tickets writes ticket data; other services change it by event.
-- Uploads go to tickets (permission check, original to MinIO, outbox
+- Uploads go to tickets (permission check, original to Garage (S3), outbox
   `attachment.uploaded`); image consumes that and never serves HTTP.
 - Only tickets has an outbox: it is the only DB-write-plus-publish. The relay
   claims rows with `FOR UPDATE SKIP LOCKED` so replicas never double-publish.
@@ -107,15 +109,16 @@ publish a port. Secrets are files under `/run/secrets`, never env vars
 (Spring reads them via `SPRING_CONFIG_IMPORT=configtree:/run/secrets/`,
 Postgres via `*_FILE`).
 
-| Service | Inbound from        | Outbound to |
-| ------- | ------------------- | ----------- |
-| auth    | `app` network (8080) | auth-db     |
-| auth-db | auth only           | none        |
-| client  | none (tools profile) | `app`       |
+| Service       | Inbound from                   | Outbound to         |
+| ------------- | ------------------------------ | ------------------- |
+| auth          | `app` network (8080)           | auth-db             |
+| auth-db       | auth only                      | none                |
+| gateway       | host `127.0.0.1:8080` (`edge`) | auth, gateway-redis |
+| gateway-redis | gateway only                   | none                |
+| client        | none (tools profile)           | `app`               |
 
-`auth/compose.dev.yaml` (dev only, passed with `-f`) publishes auth on
-`127.0.0.1:9000` via a non-internal `dev-edge` network, because internal-only
-networks cannot publish ports; it also gives auth egress, so never ship it.
+Browsers reach auth only through the gateway, which proxies its login pages on
+the same origin (`127.0.0.1:8080`), so `AUTH_ISSUER` is that public origin.
 
 ### Database rules
 
@@ -149,7 +152,6 @@ points Testcontainers at rootless podman. Format with `dprint fmt`.
 ```fish
 ./auth/dev-secrets.sh                               # once: keys, DB passwords, client secrets
 docker compose up -d --build --wait                 # private stack (every included plugin)
-docker compose -f compose.yaml -f auth/compose.dev.yaml up -d --build --wait   # + auth on 127.0.0.1:9000
 docker compose run --rm client -s http://auth:8080/.well-known/openid-configuration
 docker compose down -v                              # stop and wipe volumes
 cd auth; mvn clean verify                           # unit + Testcontainers tests (needs podman socket)
@@ -161,8 +163,7 @@ Use `clean` after deleting or renaming a test: stale classes in
 `target/test-classes` otherwise keep running. Java formatting is palantir-java-format via Spotless, applied
 on every build (`process-sources`); never format by hand, and run `mvn spotless:apply` to format alone.
 
-Auth layout, one module per responsibility, each `config/ domain/ service/
-repository/ web/` as needed:
+Auth layout, one module per responsibility, each `config/ domain/ service/ repository/ web/` as needed:
 
 - `account/`: identity and password credential. `domain/` holds the records and
   the repository **ports** (interfaces); `repository/` holds the adapters

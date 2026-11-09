@@ -153,7 +153,7 @@ code { font-family: var(--font-mono); font-size: 13px; }
 <text class="t" x="414" y="574">Postgres tickets</text>
 <text class="s" x="414" y="592">owner: tickets</text>
 <rect class="store" x="600" y="552" width="180" height="50" rx="6"/>
-<text class="t" x="614" y="574">MinIO</text>
+<text class="t" x="614" y="574">Garage</text>
 <text class="s" x="614" y="592">2 buckets, 2 owners</text>
 <rect class="store" x="800" y="552" width="180" height="50" rx="6"/>
 <text class="t" x="814" y="574">Ollama</text>
@@ -177,7 +177,7 @@ code { font-family: var(--font-mono); font-size: 13px; }
 </svg>
   <figcaption>Workers call tickets only to read (<code>GET /internal/*</code>); every change to ticket data goes in as an event that tickets applies.</figcaption>
   </figure>
-  <div class="table-wrap"><table><thead><tr><th>Service</th><th>Owns (only writer)</th><th>Inbound</th><th>Outbound</th></tr></thead><tbody><tr><td>gateway</td><td>nothing (stateless)</td><td>HTTPS/WSS from Traefik</td><td>auth, tickets (HTTP) · realtime (WS) · JWKS</td></tr><tr><td>auth</td><td>accounts, signing keys, OAuth authorizations, login sessions</td><td>/oauth2/*, /.well-known/openid-configuration, /userinfo, /login, POST /auth/register</td><td>Postgres auth</td></tr><tr><td>tickets</td><td>tickets, comments, attachment records, originals bucket, outbox</td><td>/tickets/*, /internal/* (service token)</td><td>Postgres tickets, MinIO, tickets.events; consumes attachments, triage, jobs streams</td></tr><tr><td>realtime</td><td>live connections, in memory</td><td>WS</td><td>XREAD tickets.events</td></tr><tr><td>image</td><td>thumbs bucket</td><td>tickets.events: attachment.uploaded</td><td>MinIO, attachments.events</td></tr><tr><td>ai</td><td>nothing; it classifies</td><td>tickets.events: ticket.created</td><td>tickets /internal, Ollama, triage.events</td></tr><tr><td>jobs</td><td>nothing; it schedules</td><td>timer</td><td>tickets /internal, jobs.commands</td></tr></tbody></table></div>
+  <div class="table-wrap"><table><thead><tr><th>Service</th><th>Owns (only writer)</th><th>Inbound</th><th>Outbound</th></tr></thead><tbody><tr><td>gateway</td><td>nothing (stateless)</td><td>HTTPS/WSS from Traefik</td><td>auth, tickets (HTTP) · realtime (WS) · JWKS</td></tr><tr><td>auth</td><td>accounts, signing keys, OAuth authorizations, login sessions</td><td>/oauth2/*, /.well-known/openid-configuration, /userinfo, /login, POST /auth/register</td><td>Postgres auth</td></tr><tr><td>tickets</td><td>tickets, comments, attachment records, originals bucket, outbox</td><td>/tickets/*, /internal/* (service token)</td><td>Postgres tickets, Garage, tickets.events; consumes attachments, triage, jobs streams</td></tr><tr><td>realtime</td><td>live connections, in memory</td><td>WS</td><td>XREAD tickets.events</td></tr><tr><td>image</td><td>thumbs bucket</td><td>tickets.events: attachment.uploaded</td><td>Garage, attachments.events</td></tr><tr><td>ai</td><td>nothing; it classifies</td><td>tickets.events: ticket.created</td><td>tickets /internal, Ollama, triage.events</td></tr><tr><td>jobs</td><td>nothing; it schedules</td><td>timer</td><td>tickets /internal, jobs.commands</td></tr></tbody></table></div>
 </section>
 
 <section>
@@ -273,7 +273,7 @@ code { font-family: var(--font-mono); font-size: 13px; }
 <text class="s" x="600.0" y="55" text-anchor="middle">tickets db</text>
 <line class="life" x1="773.3333333333334" y1="66" x2="773.3333333333334" y2="646"/>
 <rect class="box" x="707.3333333333334" y="18" width="132" height="48" rx="6"/>
-<text class="t" x="773.3333333333334" y="38" text-anchor="middle">MinIO</text>
+<text class="t" x="773.3333333333334" y="38" text-anchor="middle">Garage</text>
 <text class="s" x="773.3333333333334" y="55" text-anchor="middle">object store</text>
 <line class="life" x1="946.6666666666666" y1="66" x2="946.6666666666666" y2="646"/>
 <rect class="bus" x="880.6666666666666" y="18" width="132" height="48" rx="6"/>
@@ -378,7 +378,7 @@ code { font-family: var(--font-mono); font-size: 13px; }
 <li class="lay transport"><b>transport</b><span>http/: axum handlers · consume/: stream consumers</span></li>
 <li class="lay app"><b>app</b><span>app/: create, comment, attach, apply triage</span></li>
 <li class="lay domain"><b>domain</b><span>domain/: Ticket, status machine, triage allow-list</span></li>
-<li class="lay adapters"><b>adapters</b><span>store/: sqlx · outbox/: relay · blob/: MinIO</span></li>
+<li class="lay adapters"><b>adapters</b><span>store/: sqlx · outbox/: relay · blob/: Garage (S3)</span></li>
 </ol></article>
 <article class="card">
 <h3>realtime <span>Node</span></h3><ol class="stack">
@@ -392,7 +392,7 @@ code { font-family: var(--font-mono); font-size: 13px; }
 <li class="lay transport"><b>transport</b><span>consume/: attachment.uploaded</span></li>
 <li class="lay app"><b>app</b><span>app/: process one attachment, idempotent</span></li>
 <li class="lay domain"><b>domain</b><span>thumb/: size check + resize (pure)</span></li>
-<li class="lay adapters"><b>adapters</b><span>blob/: MinIO · publish/: XADD</span></li>
+<li class="lay adapters"><b>adapters</b><span>blob/: Garage (S3) · publish/: XADD</span></li>
 </ol></article>
 <article class="card">
 <h3>ai <span>Python</span></h3><ol class="stack">

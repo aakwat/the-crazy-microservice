@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>the-crazy-microservice — trust zones and traffic</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0f1115; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="the-crazy-microservice trust zones with inbound and internal traffic"></canvas>
+<script>
+const W = 1600, H = 910;
+
+const C = {
+  bg: "#0f1115", panel: "#1a1e26", text: "#e6e8ec", dim: "#9aa1ad",
+  inb: "#33b980", int: "#8a93a3", bad: "#ef5f5f",
+  untrusted: "#ef5f5f", edge: "#f0913a", app: "#4f8cff", data: "#33b980", host: "#5b6270",
+};
+
+// Trust zones. Gaps between zone borders are where gates sit; no line runs along a border.
+const zones = [
+  { x: 320, y: 80, w: 1030, h: 740, c: C.host, lw: 3, t: "OUR HOST  (Docker Compose today · k3d later)" },
+  { x: 40, y: 120, w: 250, h: 330, c: C.untrusted, dash: [8, 6], t: "UNTRUSTED · public internet" },
+  { x: 340, y: 120, w: 240, h: 560, c: C.edge, t: "EDGE · public-facing (edge net)" },
+  { x: 610, y: 120, w: 380, h: 560, c: C.app, t: "PRIVATE · app (internal net)" },
+  { x: 1020, y: 120, w: 310, h: 560, c: C.data, lw: 3, t: "PRIVATE · data (one internal net each)" },
+];
+
+const boxes = [
+  { x: 60, y: 150, w: 210, h: 100, c: C.untrusted, t: "Users (browser)",
+    l: ["customers · agents", "gets a cookie, never", "a token"] },
+  { x: 60, y: 290, w: 210, h: 100, c: C.untrusted, t: "Bots · scanners",
+    l: ["same path, same rules", "other ports: closed"] },
+
+  { x: 355, y: 240, w: 210, h: 190, c: C.edge, t: "gateway — Go BFF",
+    l: ["127.0.0.1:8080 only", "PKCE login · sessions", "/internal/* → 404", "per-IP limits · CSRF", "1 MiB body cap"] },
+  { x: 355, y: 470, w: 210, h: 90, c: C.edge, dashed: true, t: "Traefik (k8s scope)",
+    l: ["TLS · only listener", "in front of gateway"] },
+
+  { x: 630, y: 145, w: 340, h: 95, c: C.app, t: "auth — Spring Authorization Server",
+    l: ["OIDC · PKCE · rotating refresh", "Argon2id · lockout · RFC 9068"] },
+  { x: 630, y: 270, w: 160, h: 90, c: C.app, dashed: true, t: "tickets (Rust)",
+    l: ["planned", "outbox → events"] },
+  { x: 810, y: 270, w: 160, h: 90, c: C.app, dashed: true, t: "realtime (Node)",
+    l: ["planned", "WebSocket push"] },
+  { x: 630, y: 390, w: 340, h: 70, c: C.app, dashed: true, t: "Redis Streams (planned)",
+    l: ["events · consumer groups"] },
+  { x: 630, y: 490, w: 340, h: 90, c: C.app, dashed: true, t: "workers: image · jobs · ai",
+    l: ["planned · no inbound port", "consume events"] },
+
+  { x: 1040, y: 145, w: 270, h: 90, c: C.data, t: "auth-db — Postgres 18",
+    l: ["auth_app: DML only", "auth_migrator: schema"] },
+  { x: 1040, y: 250, w: 270, h: 70, c: C.data, dashed: true, t: "tickets-db (planned)",
+    l: ["Postgres 18"] },
+  { x: 1040, y: 340, w: 270, h: 70, c: C.data, dashed: true, t: "Garage S3 (planned)",
+    l: ["originals · thumbs"] },
+  { x: 1040, y: 430, w: 270, h: 70, c: C.data, dashed: true, t: "Ollama (planned)",
+    l: ["local model, no egress"] },
+  { x: 1040, y: 540, w: 270, h: 90, c: C.data, t: "gateway-redis",
+    l: ["ACL user: gw:* only", "no persistence"] },
+];
+
+// k: in | int | bad. Segments [x1,y1,x2,y2]; arrowhead on the last.
+const arrows = [
+  { k: "in", segs: [[270, 200, 305, 200], [305, 200, 305, 330], [305, 330, 355, 330]], label: "cookie", lx: 272, ly: 193 },
+  { k: "bad", segs: [[270, 360, 298, 360]], x: true },
+  { k: "in", segs: [[565, 280, 595, 280], [595, 280, 595, 190], [595, 190, 630, 190]], label: "login", lx: 568, ly: 273 },
+  { k: "in", segs: [[565, 315, 630, 315]], label: "API", lx: 570, ly: 308 },
+  { k: "int", segs: [[565, 400, 595, 400], [595, 400, 595, 700], [595, 700, 1175, 700], [1175, 700, 1175, 630]], label: "sessions", lx: 880, ly: 694 },
+  { k: "int", segs: [[970, 195, 1040, 195]] },
+  { k: "int", segs: [[890, 270, 890, 240]], label: "JWKS", lx: 898, ly: 260 },
+  { k: "int", segs: [[700, 360, 700, 390]] },
+  { k: "int", segs: [[890, 390, 890, 360]] },
+  { k: "int", segs: [[800, 460, 800, 490]] },
+  { k: "int", segs: [[710, 360, 710, 375], [710, 375, 1040, 375]] },
+  { k: "int", segs: [[1012, 375, 1012, 285], [1012, 285, 1040, 285]] },
+  { k: "int", segs: [[970, 535, 1012, 535], [1012, 535, 1012, 465], [1012, 465, 1040, 465]] },
+];
+
+const gates = [
+  { n: "G1", x: 305, y: 270 },
+  { n: "G1", x: 298, y: 404 },
+  { n: "G2", x: 595, y: 245 },
+  { n: "G3", x: 1005, y: 211 },
+  { n: "G3", x: 1005, y: 716 },
+];
+
+const gateText = [
+  ["G1", "internet → edge", "127.0.0.1:8080 today, Traefik TLS later; per-IP limits, cross-site POST refused"],
+  ["G2", "edge → app", "listed routes only; gateway cookies stripped; Bearer must be at+jwt"],
+  ["G3", "app → data", "one internal net per store; DML-only DB role; Redis ACL gw:*"],
+];
+
+// ---------- drawing ----------
+const cv = document.getElementById("c");
+const ctx = cv.getContext("2d");
+const rr = (x, y, w, h, r) => { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); };
+
+function zone(z) {
+  rr(z.x, z.y, z.w, z.h, 12);
+  ctx.strokeStyle = z.c; ctx.lineWidth = z.lw || 1.5;
+  ctx.setLineDash(z.dash || []); ctx.stroke(); ctx.setLineDash([]);
+  ctx.font = "700 11px system-ui, sans-serif"; ctx.fillStyle = z.c;
+  ctx.fillText(z.t, z.x + 12, z.y + 18);
+}
+
+function box(b) {
+  rr(b.x, b.y, b.w, b.h, 8); ctx.fillStyle = C.panel; ctx.fill();
+  ctx.strokeStyle = b.c; ctx.lineWidth = 1;
+  ctx.setLineDash(b.dashed ? [6, 5] : []); ctx.stroke(); ctx.setLineDash([]);
+  ctx.font = "600 14px system-ui, sans-serif"; ctx.fillStyle = C.text;
+  ctx.fillText(b.t, b.x + 12, b.y + 22);
+  ctx.font = "12px ui-monospace, monospace"; ctx.fillStyle = C.dim;
+  b.l.forEach((l, i) => ctx.fillText(l, b.x + 12, b.y + 44 + i * 18));
+}
+
+function arrow(a) {
+  const col = { in: C.inb, int: C.int, bad: C.bad }[a.k];
+  ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 2;
+  ctx.setLineDash(a.k === "bad" ? [5, 4] : []);
+  a.segs.forEach(([x1, y1, x2, y2]) => { ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); });
+  ctx.setLineDash([]);
+  const [x1, y1, x2, y2] = a.segs[a.segs.length - 1];
+  if (a.x) {
+    ctx.beginPath(); ctx.moveTo(x2 - 6, y2 - 6); ctx.lineTo(x2 + 6, y2 + 6);
+    ctx.moveTo(x2 + 6, y2 - 6); ctx.lineTo(x2 - 6, y2 + 6); ctx.stroke();
+  } else {
+    const ang = Math.atan2(y2 - y1, x2 - x1);
+    ctx.beginPath(); ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - 10 * Math.cos(ang - 0.4), y2 - 10 * Math.sin(ang - 0.4));
+    ctx.lineTo(x2 - 10 * Math.cos(ang + 0.4), y2 - 10 * Math.sin(ang + 0.4));
+    ctx.closePath(); ctx.fill();
+  }
+  if (a.label) {
+    ctx.font = "11px system-ui, sans-serif"; ctx.fillStyle = col;
+    ctx.fillText(a.label, a.lx, a.ly);
+  }
+}
+
+function gate(g) {
+  ctx.beginPath(); ctx.arc(g.x, g.y - 16, 11, 0, Math.PI * 2);
+  ctx.fillStyle = C.bg; ctx.fill();
+  ctx.strokeStyle = C.text; ctx.lineWidth = 1.2; ctx.stroke();
+  ctx.font = "700 10px system-ui, sans-serif"; ctx.fillStyle = C.text;
+  ctx.textAlign = "center"; ctx.fillText(g.n, g.x, g.y - 12.5); ctx.textAlign = "left";
+}
+
+function wrapText(text, x, y, maxW, lh) {
+  let line = "";
+  for (const word of text.split(" ")) {
+    const t = line ? line + " " + word : word;
+    if (ctx.measureText(t).width > maxW && line) { ctx.fillText(line, x, y); y += lh; line = word; }
+    else line = t;
+  }
+  ctx.fillText(line, x, y);
+  return y + lh;
+}
+
+function legend() {
+  const x = 1375, w = 195;
+  rr(x, 80, w, 740, 12); ctx.strokeStyle = "#2c313c"; ctx.lineWidth = 1; ctx.stroke();
+  let y = 108;
+  const head = t => { ctx.font = "600 14px system-ui, sans-serif"; ctx.fillStyle = C.text; ctx.fillText(t, x + 14, y); y += 22; };
+  const line = (c, d, lw, t) => {
+    ctx.strokeStyle = c; ctx.lineWidth = lw; ctx.setLineDash(d);
+    ctx.beginPath(); ctx.moveTo(x + 14, y - 4); ctx.lineTo(x + 44, y - 4); ctx.stroke(); ctx.setLineDash([]);
+    ctx.font = "12px ui-monospace, monospace"; ctx.fillStyle = C.dim; ctx.fillText(t, x + 52, y); y += 19;
+  };
+
+  head("Zone borders");
+  line(C.untrusted, [8, 6], 1.5, "untrusted");
+  line(C.edge, [], 1.5, "public-facing");
+  line(C.app, [], 1.5, "private app");
+  line(C.data, [], 3, "private data");
+  y += 12;
+  head("Traffic");
+  line(C.inb, [], 2, "inbound");
+  line(C.int, [], 2, "internal");
+  line(C.bad, [5, 4], 2, "dropped");
+  y += 12;
+  head("Boxes");
+  line(C.dim, [], 1, "running");
+  line(C.dim, [6, 5], 1, "planned");
+  y += 12;
+  head("Gates");
+  gateText.forEach(([n, from, rule]) => {
+    ctx.font = "700 12px system-ui, sans-serif"; ctx.fillStyle = C.text;
+    ctx.fillText(n + "  " + from, x + 14, y); y += 17;
+    ctx.font = "12px ui-monospace, monospace"; ctx.fillStyle = C.dim;
+    y = wrapText(rule, x + 14, y, w - 28, 16) + 8;
+  });
+  y += 4;
+  head("Egress");
+  ctx.font = "12px ui-monospace, monospace"; ctx.fillStyle = C.dim;
+  y = wrapText("none: app and data nets are internal: true", x + 14, y, w - 28, 16) + 8;
+  head("Public ports");
+  ctx.font = "12px ui-monospace, monospace"; ctx.fillStyle = C.inb;
+  ["127.0.0.1:8080 (dev)", "443 via Traefik (k8s)"].forEach(t => { ctx.fillText(t, x + 14, y); y += 17; });
+}
+
+function draw() {
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = innerWidth * dpr; cv.height = innerHeight * dpr;
+  const s = Math.min(innerWidth / W, innerHeight / H);
+  ctx.setTransform(dpr * s, 0, 0, dpr * s, dpr * (innerWidth - W * s) / 2, dpr * (innerHeight - H * s) / 2);
+  ctx.fillStyle = C.bg; ctx.fillRect(-W, -H, W * 3, H * 3);
+
+  ctx.font = "700 22px system-ui, sans-serif"; ctx.fillStyle = C.text;
+  ctx.fillText("the-crazy-microservice — trust zones & traffic", 40, 40);
+  ctx.font = "13px system-ui, sans-serif"; ctx.fillStyle = C.dim;
+  ctx.fillText("One public gateway · every other service private · every zone crossing goes through a numbered gate", 40, 60);
+
+  zones.forEach(zone);
+  boxes.forEach(box);
+  arrows.forEach(arrow);
+  gates.forEach(gate);
+  legend();
+
+  ctx.font = "12px system-ui, sans-serif"; ctx.fillStyle = C.dim;
+  ctx.fillText("Tokens carry the public issuer http://127.0.0.1:8080; the gateway reaches auth on the internal net, so issuer and auth URL are set separately.", 40, 860);
+  ctx.fillText("Secrets are files in /run/secrets, never environment variables. Detail: architecture.html.", 40, 880);
+}
+
+addEventListener("resize", draw);
+draw();
+</script>
+</body>
+</html>
