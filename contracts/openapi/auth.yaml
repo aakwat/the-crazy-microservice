@@ -1,0 +1,113 @@
+openapi: 3.1.0
+info:
+  title: auth
+  version: 1.0.0
+  description: >-
+    Auth's custom endpoints. Tokens, login and discovery are the standard OAuth 2.1 / OIDC endpoints
+    (/.well-known/openid-configuration). Reached only through the gateway.
+servers:
+  - url: http://127.0.0.1:8080
+paths:
+  /auth/register:
+    post:
+      summary: Self-service sign-up; the account gets the default role
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "429": { description: Rate limited by the gateway }
+  /auth/accounts:
+    get:
+      summary: Admins only; find an account by email (case-insensitive)
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: email, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The account
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        "401": { description: No valid access token (RFC 6750) }
+        "403": { description: Not an admin (RFC 6750 insufficient_scope) }
+        "404": { $ref: "#/components/responses/Problem" }
+  /auth/accounts/{id}/role:
+    put:
+      summary: Admins only; replace the account's role. Audited; tokens pick it up at the next refresh.
+      security: [{ bearer: [] }]
+      parameters:
+        - {
+            name: id,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChangeRoleRequest" }
+      responses:
+        "200":
+          description: The account with its new role
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { description: No valid access token (RFC 6750) }
+        "403": { description: Not an admin (RFC 6750 insufficient_scope) }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer, bearerFormat: JWT }
+  responses:
+    Problem:
+      description: RFC 9457 problem
+      content:
+        application/problem+json:
+          schema: {
+            type: object,
+            required: [title, status],
+            properties: {
+              title: { type: string },
+              status: { type: integer },
+              detail: { type: string },
+            },
+          }
+  schemas:
+    RegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        password: { type: string }
+    ChangeRoleRequest:
+      type: object
+      additionalProperties: false
+      required: [role]
+      properties:
+        role: {
+          type: string,
+          maxLength: 32,
+          examples: [customer, agent, admin],
+        }
+    Account:
+      type: object
+      required: [id, email, role]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        role: { type: string }

@@ -49,8 +49,9 @@ to the browser. Workers (jobs, ai) use `client_credentials`. Access tokens carry
 `roles` for users. Access tokens follow RFC 9068: header `typ: at+jwt` plus a
 `client_id` claim. Every service verifies against cached JWKS (refetch on
 unknown `kid`) **and requires `typ: at+jwt`**, so an ID token is never accepted
-as an access token; none trusts an identity header. Auth's only custom endpoint
-is `POST /auth/register`.
+as an access token; none trusts an identity header. Auth's custom endpoints are
+`POST /auth/register` and the admin-only role API (`GET /auth/accounts?email=`,
+`PUT /auth/accounts/{id}/role`); a role change reaches tokens at the next refresh.
 
 **Sync HTTP (JSON), kept minimal.** Only: gateway → auth, tickets (proxy) and
 → realtime (WS), services → auth JWKS, jobs and ai → tickets `GET /internal/*`
@@ -168,8 +169,8 @@ on every build (`process-sources`); never format by hand, and run `mvn spotless:
 
 Auth layout, one module per responsibility, each `config/ domain/ service/ repository/ web/` as needed:
 
-- `account/`: identity and password credential. `domain/` holds the records and
-  the repository **ports** (interfaces); `repository/` holds the adapters
+- `account/`: identity, password credential and role changes. `domain/` holds the
+  records, `domain/port/` the repository **ports** (interfaces); `repository/` holds the adapters
   (`JpaAccountRepository implements AccountRepository`) with `repository/jpa`
   for entities and Spring Data, which never leave the adapter.
 - `login/`: lockout policy, the `authentication_attempts` record and its
