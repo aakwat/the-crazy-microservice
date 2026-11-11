@@ -35,6 +35,24 @@ func TestUnlistedPathsAre404AndNeverReachAuth(t *testing.T) {
 	}
 }
 
+func TestTicketsNeedASession(t *testing.T) {
+	h, _ := newTestRoutes(t)
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodGet, "/api/tickets"},
+		{http.MethodPost, "/api/tickets"},
+		{http.MethodGet, "/api/tickets/0190f0e0-0000-7000-8000-000000000000"},
+		{http.MethodPatch, "/api/tickets/0190f0e0-0000-7000-8000-000000000000"},
+	} {
+		rec := serve(h, httptest.NewRequest(tc.method, tc.path, nil))
+		if rec.Code != http.StatusUnauthorized || rec.Header().Get("WWW-Authenticate") != "Bearer" {
+			t.Errorf("%s %s without a session = %d, want 401 with WWW-Authenticate", tc.method, tc.path, rec.Code)
+		}
+	}
+	if rec := serve(h, httptest.NewRequest(http.MethodDelete, "/api/tickets/1", nil)); rec.Code != http.StatusNotFound {
+		t.Errorf("DELETE /api/tickets/1 = %d, want 404 for an unlisted method", rec.Code)
+	}
+}
+
 func TestAuthPagesGetNoGatewayCredentialsAndTrustedForwarding(t *testing.T) {
 	h, auth := newTestRoutes(t)
 	forged := "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
@@ -177,7 +195,15 @@ func newTestRoutes(t *testing.T) (http.Handler, *authStub) {
 		AfterLoginPath:  "/bff/user",
 		AfterLogoutPath: "/bff/logged-out",
 	}, rdb, discard)
-	return routes(b, newProxy(target, &url.URL{Scheme: "http", Host: "gateway.test"}, discard)), auth
+	public := &url.URL{Scheme: "http", Host: "gateway.test"}
+	tickets := &authStub{}
+	ticketsSrv := httptest.NewServer(tickets)
+	t.Cleanup(ticketsSrv.Close)
+	ticketsURL, err := url.Parse(ticketsSrv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return routes(b, newProxy(target, public, discard), newProxy(ticketsURL, public, discard)), auth
 }
 
 func serve(h http.Handler, req *http.Request) *httptest.ResponseRecorder {

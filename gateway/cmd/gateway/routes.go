@@ -21,6 +21,12 @@ var authPages = []string{
 	"GET /.well-known/", "GET /oauth2/jwks",
 }
 
+// ticketRoutes reach tickets only with an access token; tickets itself decides who may do what.
+var ticketRoutes = []string{
+	"POST /api/tickets", "GET /api/tickets",
+	"GET /api/tickets/{id}", "PATCH /api/tickets/{id}",
+}
+
 // securityHeaders go on every response; the gateway's values replace any that an upstream sends.
 var securityHeaders = map[string]string{
 	"X-Content-Type-Options": "nosniff",
@@ -29,7 +35,7 @@ var securityHeaders = map[string]string{
 }
 
 // routes returns the gateway's whole public surface; any path not listed, /internal/* included, is a 404.
-func routes(b *bff.BFF, auth http.Handler) http.Handler {
+func routes(b *bff.BFF, auth, tickets http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	// Each login start writes a Redis key, so anonymous callers get a budget.
 	mux.Handle("GET /bff/login", perIP(loginPerMin, http.HandlerFunc(b.Login)))
@@ -46,6 +52,11 @@ func routes(b *bff.BFF, auth http.Handler) http.Handler {
 	// Each password attempt costs auth an Argon2 hash, and per-account lockout cannot stop a spray.
 	mux.Handle("POST /login", perIP(loginPerMin, pages))
 	mux.Handle("POST /auth/register", perIP(registerPerMin, pages))
+
+	api := b.Authorize(tickets)
+	for _, pattern := range ticketRoutes {
+		mux.Handle(pattern, api)
+	}
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)

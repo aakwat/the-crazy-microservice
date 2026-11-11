@@ -17,6 +17,7 @@ type config struct {
 	redisAddr     string
 	redisUser     string
 	redisPassword string
+	ticketsURL    string
 	bff           bff.Config
 }
 
@@ -28,6 +29,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 		redisAddr:     l.required("GATEWAY_REDIS_ADDR"),
 		redisUser:     l.required("GATEWAY_REDIS_USER"),
 		redisPassword: l.secret("GATEWAY_REDIS_PASSWORD"),
+		ticketsURL:    l.url("TICKETS_INTERNAL_URL"),
 		bff: bff.Config{
 			PublicURL:       l.url("GATEWAY_PUBLIC_URL"),
 			Issuer:          l.url("AUTH_ISSUER"),

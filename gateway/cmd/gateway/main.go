@@ -1,4 +1,4 @@
-// Command gateway is the only public entry point: browser login (BFF), token mapping and a proxy to auth.
+// Command gateway is the only public entry point: browser login (BFF), token mapping and a proxy to the services.
 package main
 
 import (
@@ -51,6 +51,10 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	ticketsURL, err := url.Parse(cfg.ticketsURL)
+	if err != nil {
+		return err
+	}
 	publicURL, err := url.Parse(cfg.bff.PublicURL)
 	if err != nil {
 		return err
@@ -64,10 +68,11 @@ func run(log *slog.Logger) error {
 		return fmt.Errorf("connecting to redis: %w", err)
 	}
 	cfg.bff.HTTPClient = authClient()
+	handler := routes(bff.New(ctx, cfg.bff, rdb, log), newProxy(authURL, publicURL, log), newProxy(ticketsURL, publicURL, log))
 
 	srv := &http.Server{
 		Addr:              cfg.listen,
-		Handler:           routes(bff.New(ctx, cfg.bff, rdb, log), newProxy(authURL, publicURL, log)),
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,

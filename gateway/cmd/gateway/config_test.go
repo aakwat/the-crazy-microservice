@@ -16,6 +16,7 @@ func TestLoadConfigReadsEnvAndSecretFiles(t *testing.T) {
 		"GATEWAY_PUBLIC_URL":       "http://127.0.0.1:8080/",
 		"AUTH_ISSUER":              "http://127.0.0.1:8080",
 		"AUTH_INTERNAL_URL":        "http://auth:8080",
+		"TICKETS_INTERNAL_URL":     "http://tickets:8080",
 		"GATEWAY_CLIENT_ID":        "gateway",
 		"GATEWAY_REDIS_ADDR":       "gateway-redis:6379",
 		"GATEWAY_REDIS_USER":       "gateway",
