@@ -1,0 +1,43 @@
+[workspace]
+resolver = "3"
+members = ["domain", "application", "adapters/postgres", "adapters/jwks", "api"]
+
+[workspace.package]
+edition = "2024"
+publish = false
+
+[workspace.dependencies]
+application = { path = "application" }
+axum = "0.8"
+domain = { path = "domain" }
+http-body-util = "0.1"
+jwks = { path = "adapters/jwks" }
+postgres = { path = "adapters/postgres" }
+tower = { version = "0.5", features = ["util"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json"] }
+jsonwebtoken = { version = "11", default-features = false, features = ["rust_crypto", "use_pem"] }
+reqwest = { version = "0.13", default-features = false, features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "uuid", "time", "json", "migrate", "macros"] }
+testcontainers = "0.27"
+testcontainers-modules = { version = "0.15", features = ["postgres"] }
+wiremock = "0.6"
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+thiserror = "2.0.21"
+time = { version = "0.3.55", features = ["macros", "serde", "formatting", "parsing"] }
+uuid = { version = "1.29.2", features = ["v7"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+# One type per file, named after the type: domain/src/ticket/ticket.rs is intended.
+module_inception = "allow"

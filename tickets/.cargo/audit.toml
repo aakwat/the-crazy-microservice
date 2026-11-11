@@ -1,0 +1,10 @@
+# cargo audit exceptions: each says why it does not apply here. Recheck when bumping the crate that pulls it in.
+[advisories]
+ignore = [
+  # rsa, via jsonwebtoken's rust_crypto backend: Marvin needs RSA private-key operations; tickets only verifies ES256.
+  "RUSTSEC-2023-0071",
+  # crypto-bigint, via p256: timing leaks matter for secrets; ES256 verification only handles public values.
+  "RUSTSEC-2026-0387",
+  # libsqlite3-sys: Cargo.lock lists sqlx's optional SQLite backend, which is never compiled (Postgres only).
+  "RUSTSEC-2026-0459",
+]

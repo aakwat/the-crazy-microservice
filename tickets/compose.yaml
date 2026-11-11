@@ -1,0 +1,91 @@
+# Self-contained plugin: the tickets service and the only database it may reach.
+services:
+  tickets:
+    build: .
+    image: crazy-ms/tickets:dev
+    environment:
+      TICKETS_DB_HOST: tickets-db
+      TICKETS_DB_NAME: tickets
+      TICKETS_DB_APP_USER: tickets_app
+      TICKETS_DB_MIGRATOR_USER: tickets_migrator
+      # Tokens carry the public origin as iss; the keys are fetched from auth over the private network.
+      AUTH_ISSUER: http://127.0.0.1:8080
+      AUTH_JWKS_URL: http://auth:8080/oauth2/jwks
+    secrets:
+      - TICKETS_DB_MIGRATOR_PASSWORD
+      - TICKETS_DB_APP_PASSWORD
+    depends_on:
+      tickets-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/tickets", "healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: "0.5"
+    restart: unless-stopped
+    stop_grace_period: 15s
+    # Internal networks only: reachable via app, no outbound internet, and therefore no published ports.
+    networks:
+      - app
+      - tickets-data
+
+  tickets-db:
+    image: docker.io/library/postgres:18.6-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
+    environment:
+      POSTGRES_DB: tickets
+      # Bootstrap superuser: only db/init/01-roles.sql and the healthcheck use it; the service never sees it.
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/TICKETS_DB_SUPERUSER_PASSWORD
+    secrets:
+      - TICKETS_DB_SUPERUSER_PASSWORD
+      - TICKETS_DB_MIGRATOR_PASSWORD
+      - TICKETS_DB_APP_PASSWORD
+    volumes:
+      - tickets-db-data:/var/lib/postgresql
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tickets"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
+    cap_drop: [ALL]
+    # Only what the entrypoint needs to fix data-dir ownership and drop from root to the postgres user.
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    security_opt: [no-new-privileges:true]
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    restart: unless-stopped
+    networks:
+      - tickets-data
+
+secrets:
+  TICKETS_DB_SUPERUSER_PASSWORD:
+    file: ./secrets/TICKETS_DB_SUPERUSER_PASSWORD
+  TICKETS_DB_MIGRATOR_PASSWORD:
+    file: ./secrets/TICKETS_DB_MIGRATOR_PASSWORD
+  TICKETS_DB_APP_PASSWORD:
+    file: ./secrets/TICKETS_DB_APP_PASSWORD
+
+volumes:
+  tickets-db-data:
+
+networks:
+  app:
+    internal: true
+  tickets-data:
+    internal: true

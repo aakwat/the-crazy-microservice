@@ -1,0 +1,20 @@
+[package]
+name = "jwks"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+domain.workspace = true
+jsonwebtoken.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+tokio.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+wiremock.workspace = true
+
+[lints]
+workspace = true

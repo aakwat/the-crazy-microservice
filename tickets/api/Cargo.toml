@@ -1,0 +1,36 @@
+[package]
+name = "api"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "tickets"
+path = "src/main.rs"
+
+[dependencies]
+application.workspace = true
+axum.workspace = true
+domain.workspace = true
+jwks.workspace = true
+postgres.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+time.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid = { workspace = true, features = ["serde"] }
+
+[dev-dependencies]
+http-body-util.workspace = true
+jsonwebtoken.workspace = true
+testcontainers.workspace = true
+testcontainers-modules.workspace = true
+tower.workspace = true
+wiremock.workspace = true
+
+[lints]
+workspace = true
