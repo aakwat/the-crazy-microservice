@@ -29,8 +29,11 @@ class AccountAdminController {
   }
 
   @GetMapping
-  AccountResponse findByEmail(@RequestParam String email) {
-    return accounts.findByEmail(email).map(AccountResponse::from).orElseThrow(this::notFound);
+  AccountResponse findByEmail(@RequestParam String email, @AuthenticationPrincipal Jwt caller) {
+    return accounts
+        .findByEmailAsAdmin(UUID.fromString(caller.getSubject()), email)
+        .map(AccountResponse::from)
+        .orElseThrow(this::notFound);
   }
 
   @PutMapping("/{id}/role")

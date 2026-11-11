@@ -69,6 +69,22 @@ class AccountAdminTest extends AuthTestSupport {
   }
 
   @Test
+  void aDemotedAdminsUnexpiredTokenIsRefused() throws Exception {
+    String email = uniqueEmail();
+    String id = (String) register(email, PASSWORD).body().get("id");
+    jdbc.sql("UPDATE account SET role = 'admin' WHERE id = :id")
+        .param("id", UUID.fromString(id))
+        .update();
+    String stale = (String) logIn(email).tokens().get("access_token");
+
+    assertThat(putRole(id, Map.of("role", "customer"), admin()).status()).isEqualTo(200);
+
+    assertProblem(putRole(id, Map.of("role", "admin"), stale), 403);
+    assertProblem(putRole(adminId.toString(), Map.of("role", "customer"), stale), 403);
+    assertProblem(get("/auth/accounts?email=" + email, stale), 403);
+  }
+
+  @Test
   void refusedChangesAreProblems() {
     String id = (String) register(uniqueEmail(), PASSWORD).body().get("id");
 

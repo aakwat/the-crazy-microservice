@@ -1,6 +1,7 @@
 package com.crazyms.auth.shared.web;
 
 import com.crazyms.auth.account.service.EmailTakenException;
+import com.crazyms.auth.account.service.NotAdminException;
 import com.crazyms.auth.account.service.OwnAdminRoleException;
 import com.crazyms.auth.account.service.UnknownRoleException;
 import org.springframework.http.HttpStatus;
@@ -16,6 +17,11 @@ class ApiErrors extends ResponseEntityExceptionHandler {
   @ExceptionHandler({EmailTakenException.class, OwnAdminRoleException.class})
   ProblemDetail conflict(RuntimeException e) {
     return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
+  }
+
+  @ExceptionHandler(NotAdminException.class)
+  ProblemDetail notAdmin(NotAdminException e) {
+    return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, e.getMessage());
   }
 
   @ExceptionHandler(UnknownRoleException.class)

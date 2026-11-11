@@ -14,7 +14,9 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,8 +47,18 @@ public class AccountService {
     this.clock = clock;
     this.defaultRole = new Role(props.defaultRole());
     this.roles = props.roles().stream().map(Role::new).collect(Collectors.toUnmodifiableSet());
-    if (!roles.contains(defaultRole)) {
-      throw new IllegalStateException("auth.account.default-role must be in auth.account.roles");
+    if (!roles.contains(defaultRole) || !roles.contains(Role.ADMIN)) {
+      throw new IllegalStateException("auth.account.roles must hold the default role and admin");
+    }
+    if (defaultRole.equals(Role.ADMIN)) {
+      throw new IllegalStateException("auth.account.default-role must not be admin");
+    }
+  }
+
+  // The token's roles claim can be up to 15 minutes old; the stored role is the truth.
+  private static void requireAdmin(Account actor) {
+    if (actor == null || !actor.role().equals(Role.ADMIN)) {
+      throw new NotAdminException();
     }
   }
 
@@ -70,7 +82,14 @@ public class AccountService {
     return accounts.findById(id);
   }
 
-  /** Callers must already be admins; empty when the account does not exist. */
+  /** Empty when no account has the email. */
+  @Transactional(readOnly = true)
+  public Optional<Account> findByEmailAsAdmin(UUID actorId, String email) {
+    requireAdmin(accounts.findById(actorId).orElse(null));
+    return findByEmail(email);
+  }
+
+  /** Empty when the account does not exist. */
   @Transactional
   public Optional<Account> changeRole(UUID actorId, UUID accountId, String roleName) {
     var to =
@@ -78,13 +97,16 @@ public class AccountService {
             .filter(r -> r.name().equals(roleName))
             .findFirst()
             .orElseThrow(UnknownRoleException::new);
-    return accounts
-        .findByIdForUpdate(accountId)
+    var locked =
+        accounts.findAllByIdForUpdate(Stream.of(actorId, accountId).distinct().toList()).stream()
+            .collect(Collectors.toMap(Account::id, Function.identity()));
+    requireAdmin(locked.get(actorId));
+    return Optional.ofNullable(locked.get(accountId))
         .map(account -> {
           if (account.role().equals(to)) {
             return account;
           }
-          // Keeps at least one admin: nobody can lock the last one out by accident.
+          // With the locked actor check, this keeps at least one admin.
           if (actorId.equals(accountId) && account.role().equals(Role.ADMIN)) {
             throw new OwnAdminRoleException();
           }

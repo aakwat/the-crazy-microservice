@@ -5,6 +5,8 @@ import com.crazyms.auth.account.domain.Role;
 import com.crazyms.auth.account.domain.port.AccountRepository;
 import com.crazyms.auth.account.repository.jpa.AccountEntity;
 import com.crazyms.auth.account.repository.jpa.AccountJpaRepository;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.hibernate.exception.ConstraintViolationException;
@@ -50,8 +52,8 @@ class JpaAccountRepository implements AccountRepository {
   }
 
   @Override
-  public Optional<Account> findByIdForUpdate(UUID id) {
-    return jpa.findByIdForUpdate(id).map(JpaAccountRepository::toDomain);
+  public List<Account> findAllByIdForUpdate(Collection<UUID> ids) {
+    return jpa.findAllByIdForUpdate(ids).stream().map(JpaAccountRepository::toDomain).toList();
   }
 
   @Override
