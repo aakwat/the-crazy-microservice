@@ -1,9 +1,9 @@
 package com.crazyms.auth.authserver.token;
 
-import java.util.ArrayList;
+import com.crazyms.auth.account.service.AccountService;
 import java.util.Collections;
-import java.util.stream.Collectors;
-import org.springframework.security.core.GrantedAuthority;
+import java.util.UUID;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.stereotype.Component;
 
@@ -11,12 +11,12 @@ import org.springframework.stereotype.Component;
 @Component
 class AccessTokenClaims {
 
-  private static final String ROLE_PREFIX = "ROLE_";
-
   private final TokenProperties tokens;
+  private final AccountService accounts;
 
-  AccessTokenClaims(TokenProperties tokens) {
+  AccessTokenClaims(TokenProperties tokens, AccountService accounts) {
     this.tokens = tokens;
+    this.accounts = accounts;
   }
 
   // SAS reads stored claims back through an allow-list that rejects List.of and toList().
@@ -25,14 +25,13 @@ class AccessTokenClaims {
     context.getClaims().audience(Collections.singletonList(tokens.audience()));
     // RFC 9068 requires client_id: which client the token was issued to, separate from the user.
     context.getClaims().claim("client_id", context.getRegisteredClient().getClientId());
-    var roles =
-        context.getPrincipal().getAuthorities().stream()
-            .map(GrantedAuthority::getAuthority)
-            .filter(a -> a.startsWith(ROLE_PREFIX))
-            .map(a -> a.substring(ROLE_PREFIX.length()))
-            .collect(Collectors.toCollection(ArrayList::new));
-    if (!roles.isEmpty()) {
-      context.getClaims().claim("roles", roles);
+    if (AuthorizationGrantType.CLIENT_CREDENTIALS.equals(context.getAuthorizationGrantType())) {
+      return;
     }
+    // Read now, not from the login: a refresh must carry the role an admin set since.
+    accounts
+        .find(UUID.fromString(context.getPrincipal().getName()))
+        .ifPresent(
+            a -> context.getClaims().claim("roles", Collections.singletonList(a.role().name())));
   }
 }

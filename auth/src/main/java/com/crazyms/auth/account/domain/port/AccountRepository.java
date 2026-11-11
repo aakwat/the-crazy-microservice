@@ -1,5 +1,7 @@
-package com.crazyms.auth.account.domain;
+package com.crazyms.auth.account.domain.port;
 
+import com.crazyms.auth.account.domain.Account;
+import com.crazyms.auth.account.domain.Role;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -12,4 +14,9 @@ public interface AccountRepository {
   Optional<Account> findByEmail(String normalizedEmail);
 
   Optional<Account> findById(UUID id);
+
+  /** Locks the row until the transaction ends, so concurrent role changes apply one at a time. */
+  Optional<Account> findByIdForUpdate(UUID id);
+
+  void updateRole(UUID id, Role role);
 }

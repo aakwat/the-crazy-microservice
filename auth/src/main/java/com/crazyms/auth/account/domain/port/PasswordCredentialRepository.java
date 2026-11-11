@@ -1,5 +1,6 @@
-package com.crazyms.auth.account.domain;
+package com.crazyms.auth.account.domain.port;
 
+import com.crazyms.auth.account.domain.PasswordCredential;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;

@@ -1,7 +1,7 @@
 package com.crazyms.auth.account.repository;
 
 import com.crazyms.auth.account.domain.PasswordCredential;
-import com.crazyms.auth.account.domain.PasswordCredentialRepository;
+import com.crazyms.auth.account.domain.port.PasswordCredentialRepository;
 import com.crazyms.auth.account.repository.jpa.PasswordCredentialEntity;
 import com.crazyms.auth.account.repository.jpa.PasswordCredentialJpaRepository;
 import java.time.Instant;

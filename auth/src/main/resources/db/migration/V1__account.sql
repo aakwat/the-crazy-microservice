@@ -47,3 +47,16 @@ CREATE INDEX idx_auth_attempts_ip
   WHERE NOT was_successful;
 -- The retention sweep deletes by age alone, which neither index above can serve.
 CREATE INDEX idx_auth_attempts_attempted_at ON authentication_attempts (attempted_at);
+
+-- account_role_change: append-only audit of who changed whose role.
+CREATE TABLE account_role_change (
+  id         BIGINT      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  -- SET NULL on erasure, so the audit outlives the account (GDPR Art. 17 removes the person).
+  account_id UUID        REFERENCES account(id) ON DELETE SET NULL,
+  actor_id   UUID        REFERENCES account(id) ON DELETE SET NULL,
+  from_role  TEXT        NOT NULL,
+  to_role    TEXT        NOT NULL CHECK (to_role <> from_role),
+  changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+-- The retention sweep deletes by age alone.
+CREATE INDEX idx_account_role_change_changed_at ON account_role_change (changed_at);

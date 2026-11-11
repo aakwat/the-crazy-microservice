@@ -25,6 +25,10 @@ public record Account(UUID id, String email, Role role, Instant createdAt) {
     return new Account(UuidV7.at(now), normalizeEmail(email), role, now);
   }
 
+  public Account withRole(Role newRole) {
+    return new Account(id, email, newRole, createdAt);
+  }
+
   public static String normalizeEmail(String email) {
     return email.strip().toLowerCase(Locale.ROOT);
   }

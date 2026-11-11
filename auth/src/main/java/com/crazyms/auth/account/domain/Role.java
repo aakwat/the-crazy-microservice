@@ -8,6 +8,9 @@ public record Role(String name) {
 
   private static final Pattern NAME = Pattern.compile("[a-z][a-z0-9_-]{0,31}");
 
+  /** The one role this service itself gives meaning to: it may change other accounts' roles. */
+  public static final Role ADMIN = new Role("admin");
+
   public Role {
     Objects.requireNonNull(name);
     if (!NAME.matcher(name).matches()) {

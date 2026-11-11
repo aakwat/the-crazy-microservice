@@ -35,6 +35,9 @@ server:
 auth:
   account:
     default-role: ${AUTH_DEFAULT_ROLE:customer}
+    # Every role an admin may assign; like the default, the deploying project picks them.
+    roles: ${AUTH_ROLES:customer,agent,admin}
+    role-change-retention: ${AUTH_ROLE_CHANGE_RETENTION:365d}
   login:
     lockout:
       max-failures: ${AUTH_LOCKOUT_MAX_FAILURES:5}

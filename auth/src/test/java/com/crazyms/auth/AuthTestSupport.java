@@ -64,6 +64,11 @@ abstract class AuthTestSupport {
   BrowserLogin browserLogin() throws Exception {
     String email = uniqueEmail();
     register(email, PASSWORD);
+    return logIn(email);
+  }
+
+  /** Logs an already registered account in through the browser flow. */
+  BrowserLogin logIn(String email) throws Exception {
     var browser = new TestBrowser();
     var pkce = TestBrowser.pkce();
     browser.startAuthorization(baseUrl(), pkce);

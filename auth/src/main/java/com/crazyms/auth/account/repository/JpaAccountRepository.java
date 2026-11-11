@@ -1,8 +1,8 @@
 package com.crazyms.auth.account.repository;
 
 import com.crazyms.auth.account.domain.Account;
-import com.crazyms.auth.account.domain.AccountRepository;
 import com.crazyms.auth.account.domain.Role;
+import com.crazyms.auth.account.domain.port.AccountRepository;
 import com.crazyms.auth.account.repository.jpa.AccountEntity;
 import com.crazyms.auth.account.repository.jpa.AccountJpaRepository;
 import java.util.Optional;
@@ -47,6 +47,16 @@ class JpaAccountRepository implements AccountRepository {
   @Override
   public Optional<Account> findById(UUID id) {
     return jpa.findById(id).map(JpaAccountRepository::toDomain);
+  }
+
+  @Override
+  public Optional<Account> findByIdForUpdate(UUID id) {
+    return jpa.findByIdForUpdate(id).map(JpaAccountRepository::toDomain);
+  }
+
+  @Override
+  public void updateRole(UUID id, Role role) {
+    jpa.updateRole(id, role.name());
   }
 
   private static Account toDomain(AccountEntity e) {
