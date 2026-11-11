@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tickets.events",
+  "title": "tickets.events envelope",
+  "description": "Thin events from the tickets outbox: ids and status only, never ticket text.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "type", "version", "occurred_at", "subject_id", "traceparent", "payload"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid", "description": "uuidv7; consumers dedupe on it" },
+    "type": { "enum": ["ticket.created", "ticket.changed"] },
+    "version": { "const": 1 },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "subject_id": { "type": "string", "format": "uuid", "description": "The ticket id" },
+    "traceparent": { "type": ["string", "null"], "pattern": "^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ticket_id", "status", "requester_id", "assignee_id"],
+      "properties": {
+        "ticket_id": { "type": "string", "format": "uuid" },
+        "status": { "enum": ["open", "in_progress", "resolved", "closed"] },
+        "requester_id": { "type": "string", "format": "uuid" },
+        "assignee_id": { "type": ["string", "null"], "format": "uuid" }
+      }
+    }
+  }
+}

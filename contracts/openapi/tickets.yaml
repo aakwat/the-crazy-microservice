@@ -1,0 +1,141 @@
+openapi: 3.1.0
+info:
+  title: tickets
+  version: 1.0.0
+  description: Support tickets and their status. Reached only through the gateway, which maps the session cookie to a bearer token.
+servers:
+  - url: http://127.0.0.1:8080
+security:
+  - bearer: []
+paths:
+  /api/tickets:
+    post:
+      summary: Open a ticket for the caller
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateTicket" }
+      responses:
+        "201":
+          description: Created
+          headers:
+            Location: { schema: { type: string }, description: /api/tickets/{id} }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ticket" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "413": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+    get:
+      summary: Tickets the caller may see, newest first (customers their own, agents all)
+      parameters:
+        - { name: before, in: query, schema: { type: string, format: uuid }, description: next_before of the previous page }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        "200":
+          description: One page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TicketPage" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+  /api/tickets/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: One ticket; 404 when it does not exist or the caller may not see it
+      responses:
+        "200":
+          description: The ticket
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ticket" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+    patch:
+      summary: Agents only; move the status one step or (un)assign
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChangeTicket" }
+      responses:
+        "200":
+          description: The changed ticket
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ticket" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer, bearerFormat: JWT }
+  responses:
+    Problem:
+      description: RFC 9457 problem
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+  schemas:
+    Status:
+      type: string
+      enum: [open, in_progress, resolved, closed]
+      description: Moves one step forward only; closed is final.
+    CreateTicket:
+      type: object
+      additionalProperties: false
+      required: [title, body]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        body: { type: string, minLength: 1, maxLength: 10000 }
+    ChangeTicket:
+      type: object
+      additionalProperties: false
+      properties:
+        status: { $ref: "#/components/schemas/Status" }
+        assignee_id:
+          type: [string, "null"]
+          format: uuid
+          description: Absent keeps the assignee, null unassigns.
+    Ticket:
+      type: object
+      required: [id, requester_id, assignee_id, title, body, status, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        requester_id: { type: string, format: uuid }
+        assignee_id: { type: [string, "null"], format: uuid }
+        title: { type: string }
+        body: { type: string }
+        status: { $ref: "#/components/schemas/Status" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    TicketSummary:
+      type: object
+      required: [id, requester_id, assignee_id, title, status, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        requester_id: { type: string, format: uuid }
+        assignee_id: { type: [string, "null"], format: uuid }
+        title: { type: string }
+        status: { $ref: "#/components/schemas/Status" }
+        updated_at: { type: string, format: date-time }
+    TicketPage:
+      type: object
+      required: [items, next_before]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/TicketSummary" } }
+        next_before: { type: [string, "null"], format: uuid, description: null on the last page }
+    Problem:
+      type: object
+      required: [type, title, status, detail]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
