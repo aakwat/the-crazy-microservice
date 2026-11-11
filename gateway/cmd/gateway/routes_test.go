@@ -35,13 +35,15 @@ func TestUnlistedPathsAre404AndNeverReachAuth(t *testing.T) {
 	}
 }
 
-func TestTicketsNeedASession(t *testing.T) {
-	h, _ := newTestRoutes(t)
+func TestAPIRoutesNeedASession(t *testing.T) {
+	h, auth := newTestRoutes(t)
 	for _, tc := range []struct{ method, path string }{
 		{http.MethodGet, "/api/tickets"},
 		{http.MethodPost, "/api/tickets"},
 		{http.MethodGet, "/api/tickets/0190f0e0-0000-7000-8000-000000000000"},
 		{http.MethodPatch, "/api/tickets/0190f0e0-0000-7000-8000-000000000000"},
+		{http.MethodGet, "/auth/accounts?email=a@example.com"},
+		{http.MethodPut, "/auth/accounts/0190f0e0-0000-7000-8000-000000000000/role"},
 	} {
 		rec := serve(h, httptest.NewRequest(tc.method, tc.path, nil))
 		if rec.Code != http.StatusUnauthorized || rec.Header().Get("WWW-Authenticate") != "Bearer" {
@@ -50,6 +52,9 @@ func TestTicketsNeedASession(t *testing.T) {
 	}
 	if rec := serve(h, httptest.NewRequest(http.MethodDelete, "/api/tickets/1", nil)); rec.Code != http.StatusNotFound {
 		t.Errorf("DELETE /api/tickets/1 = %d, want 404 for an unlisted method", rec.Code)
+	}
+	if got := len(auth.all()); got != 0 {
+		t.Errorf("auth received %d requests without a session, want 0", got)
 	}
 }
 

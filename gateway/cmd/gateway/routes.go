@@ -27,6 +27,9 @@ var ticketRoutes = []string{
 	"GET /api/tickets/{id}", "PATCH /api/tickets/{id}",
 }
 
+// accountRoutes are auth's admin API; auth itself admits only the admin role.
+var accountRoutes = []string{"GET /auth/accounts", "PUT /auth/accounts/{id}/role"}
+
 // securityHeaders go on every response; the gateway's values replace any that an upstream sends.
 var securityHeaders = map[string]string{
 	"X-Content-Type-Options": "nosniff",
@@ -56,6 +59,10 @@ func routes(b *bff.BFF, auth, tickets http.Handler) http.Handler {
 	api := b.Authorize(tickets)
 	for _, pattern := range ticketRoutes {
 		mux.Handle(pattern, api)
+	}
+	admin := b.Authorize(auth)
+	for _, pattern := range accountRoutes {
+		mux.Handle(pattern, admin)
 	}
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
