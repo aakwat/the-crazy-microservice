@@ -1,5 +1,6 @@
-package com.crazyms.auth.login.domain;
+package com.crazyms.auth.login.domain.port;
 
+import com.crazyms.auth.login.domain.AuthenticationAttempt;
 import java.time.Instant;
 
 /** Port: the append-only record of login outcomes. */

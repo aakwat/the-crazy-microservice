@@ -3,9 +3,9 @@ package com.crazyms.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.crazyms.auth.login.domain.AuthenticationAttempt;
-import com.crazyms.auth.login.domain.AuthenticationAttemptRepository;
 import com.crazyms.auth.login.domain.ClientInfo;
 import com.crazyms.auth.login.domain.FailureReason;
+import com.crazyms.auth.login.domain.port.AuthenticationAttemptRepository;
 import com.crazyms.auth.login.service.AttemptRetention;
 import java.time.Clock;
 import java.time.Duration;

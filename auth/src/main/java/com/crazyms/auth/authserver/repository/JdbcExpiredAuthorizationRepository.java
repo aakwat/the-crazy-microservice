@@ -1,6 +1,6 @@
 package com.crazyms.auth.authserver.repository;
 
-import com.crazyms.auth.authserver.domain.ExpiredAuthorizationRepository;
+import com.crazyms.auth.authserver.domain.port.ExpiredAuthorizationRepository;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;

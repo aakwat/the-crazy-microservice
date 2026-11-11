@@ -1,6 +1,6 @@
 package com.crazyms.auth.authserver.service;
 
-import com.crazyms.auth.authserver.domain.ExpiredAuthorizationRepository;
+import com.crazyms.auth.authserver.domain.port.ExpiredAuthorizationRepository;
 import java.time.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

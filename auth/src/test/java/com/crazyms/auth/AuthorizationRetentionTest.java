@@ -2,7 +2,7 @@ package com.crazyms.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.crazyms.auth.authserver.domain.ExpiredAuthorizationRepository;
+import com.crazyms.auth.authserver.domain.port.ExpiredAuthorizationRepository;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.Map;

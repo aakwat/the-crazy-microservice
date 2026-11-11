@@ -1,4 +1,4 @@
-package com.crazyms.auth.authserver.domain;
+package com.crazyms.auth.authserver.domain.port;
 
 import java.time.Instant;
 

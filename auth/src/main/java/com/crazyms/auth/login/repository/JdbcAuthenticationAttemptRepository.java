@@ -1,7 +1,7 @@
 package com.crazyms.auth.login.repository;
 
 import com.crazyms.auth.login.domain.AuthenticationAttempt;
-import com.crazyms.auth.login.domain.AuthenticationAttemptRepository;
+import com.crazyms.auth.login.domain.port.AuthenticationAttemptRepository;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;

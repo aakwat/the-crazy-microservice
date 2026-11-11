@@ -1,7 +1,7 @@
 package com.crazyms.auth.login.service;
 
 import com.crazyms.auth.login.config.LoginProperties;
-import com.crazyms.auth.login.domain.AuthenticationAttemptRepository;
+import com.crazyms.auth.login.domain.port.AuthenticationAttemptRepository;
 import java.time.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
