@@ -4,6 +4,7 @@ name: crazy-ms
 include:
   - auth/compose.yaml
   - gateway/compose.yaml
+  - tickets/compose.yaml
 
 services:
   # curl on the private app network, for services that publish no port.

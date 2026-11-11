@@ -4,6 +4,7 @@ set -eu
 cd "$(dirname "$0")"
 ./auth/dev-secrets.sh
 ./gateway/dev-secrets.sh
+./tickets/dev-secrets.sh
 
 # The gateway's OAuth client secret is issued by auth's registration, so both must hold the same value.
 cp auth/secrets/AUTH_CLIENT_GATEWAY_SECRET gateway/secrets/GATEWAY_CLIENT_SECRET
