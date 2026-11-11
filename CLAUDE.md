@@ -11,21 +11,22 @@ Polyglot support-ticket PoC. One public gateway; every other service is
 private (ClusterIP + default-deny NetworkPolicy on k3d). Every service is
 stateless so it can run as several replicas.
 
-| Service  | Lang   | Owns                                                    |
-| -------- | ------ | ------------------------------------------------------- |
-| gateway  | Go     | routing, JWT verify, WebSocket upgrade proxy            |
-| auth     | Java   | accounts, OIDC server (code + PKCE, client creds), JWKS |
-| tickets  | Rust   | tickets, attachment records, originals bucket, outbox   |
-| image    | Go     | thumbs bucket; worker only, no HTTP route               |
-| realtime | Node   | live sockets; pushes "ticket changed" notifications     |
-| jobs     | Python | scheduled work: SLA escalation, auto-close              |
-| ai       | Python | auto-triage of new tickets via a local model (Ollama)   |
+| Service       | Lang   | Owns                                                     |
+| ------------- | ------ | -------------------------------------------------------- |
+| gateway       | Go     | routing, JWT verify, WebSocket upgrade proxy             |
+| auth          | Java   | accounts, OIDC server (code + PKCE, client creds), JWKS  |
+| tickets       | Rust   | tickets, attachment records, originals bucket, outbox    |
+| image         | Go     | thumbs bucket; worker only, no HTTP route                |
+| realtime      | Node   | live sockets; pushes "ticket changed" notifications      |
+| jobs          | Python | scheduled work: SLA escalation, auto-close               |
+| ai            | Python | auto-triage of new tickets via a local model (Ollama)    |
+| notifications | Java   | emails requester and assignee on ticket events; sent log |
 
 Build order, one scope at a time: auth, gateway, tickets, outbox relay,
-realtime, image, jobs, ai, k8s.
+notifications, realtime, image, jobs, ai, k8s.
 
 Layers: L1 edge (Traefik TLS, gateway), L2 request services (auth, tickets,
-realtime), L3 messaging (Redis Streams), L4 workers (image, ai, jobs), L5 data
+realtime), L3 messaging (Redis Streams), L4 workers (image, ai, jobs, notifications), L5 data
 (Postgres per service, Garage (S3), Ollama). Inside every service: transport → app
 → domain ← adapters; the domain imports no framework, DB or transport code.
 The gateway is a thin edge and keeps two layers on purpose: `cmd/gateway`
@@ -60,12 +61,12 @@ retries POST. Discovery is DNS (compose / k8s Service names). No gRPC.
 **Events (Redis Streams).** Envelope:
 `{id: uuidv7, type, version, occurred_at: RFC3339, subject_id, traceparent, payload}`.
 
-| Stream               | Producer         | Consumers           |
-| -------------------- | ---------------- | ------------------- |
-| `tickets.events`     | tickets (outbox) | realtime, ai, image |
-| `attachments.events` | image            | tickets             |
-| `triage.events`      | ai               | tickets             |
-| `jobs.commands`      | jobs             | tickets             |
+| Stream               | Producer         | Consumers                          |
+| -------------------- | ---------------- | ---------------------------------- |
+| `tickets.events`     | tickets (outbox) | realtime, ai, image, notifications |
+| `attachments.events` | image            | tickets                            |
+| `triage.events`      | ai               | tickets                            |
+| `jobs.commands`      | jobs             | tickets                            |
 
 - Events are thin: IDs, type, status, `requester_id`, `assignee_id`. Never
   ticket text or other personal data (GDPR minimisation); fetch it from
@@ -109,13 +110,15 @@ publish a port. Secrets are files under `/run/secrets`, never env vars
 (Spring reads them via `SPRING_CONFIG_IMPORT=configtree:/run/secrets/`,
 Postgres via `*_FILE`).
 
-| Service       | Inbound from                   | Outbound to         |
-| ------------- | ------------------------------ | ------------------- |
-| auth          | `app` network (8080)           | auth-db             |
-| auth-db       | auth only                      | none                |
-| gateway       | host `127.0.0.1:8080` (`edge`) | auth, gateway-redis |
-| gateway-redis | gateway only                   | none                |
-| client        | none (tools profile)           | `app`               |
+| Service       | Inbound from                   | Outbound to                  |
+| ------------- | ------------------------------ | ---------------------------- |
+| auth          | `app` network (8080)           | auth-db                      |
+| auth-db       | auth only                      | none                         |
+| gateway       | host `127.0.0.1:8080` (`edge`) | auth, tickets, gateway-redis |
+| gateway-redis | gateway only                   | none                         |
+| tickets       | `app` network (8080)           | tickets-db, auth JWKS        |
+| tickets-db    | tickets only                   | none                         |
+| client        | none (tools profile)           | `app`                        |
 
 Browsers reach auth only through the gateway, which proxies its login pages on
 the same origin (`127.0.0.1:8080`), so `AUTH_ISSUER` is that public origin.
@@ -150,7 +153,7 @@ Toolchains come from the flake: `direnv allow` (or `nix develop`); it also
 points Testcontainers at rootless podman. Format with `dprint fmt`.
 
 ```fish
-./auth/dev-secrets.sh                               # once: keys, DB passwords, client secrets
+./dev-secrets.sh                                    # once: every plugin's keys, DB passwords, client secrets
 docker compose up -d --build --wait                 # private stack (every included plugin)
 docker compose run --rm client -s http://auth:8080/.well-known/openid-configuration
 docker compose down -v                              # stop and wipe volumes
