@@ -1,0 +1,56 @@
+# Self-contained plugin: the event bus (Redis Streams) that services publish to and consume from.
+services:
+  events-redis:
+    image: docker.io/library/redis:8.10.3-alpine@sha256:71885d8cc6e42f2bc0aa2eb853bfc4be200b5108a46ac50e117ae1df0531fb80
+    user: "999:1000"
+    # One ACL user per service, limited to its streams and commands; only password hashes are written.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+          hash() { sha256sum < "/run/secrets/$$1" | cut -d' ' -f1; }
+          {
+            echo 'user default off'
+            echo "user tickets on #$$(hash EVENTS_REDIS_TICKETS_PASSWORD) ~tickets.events resetchannels -@all +@connection +xadd"
+            echo "user ops on #$$(hash EVENTS_REDIS_OPS_PASSWORD) ~* resetchannels -@all +@connection +xrange +xrevrange +xlen +xinfo"
+          } > /tmp/users.acl
+          exec redis-server --aclfile /tmp/users.acl --dir /data --appendonly yes --save '' \
+            --maxmemory 128mb --maxmemory-policy noeviction
+    secrets:
+      - EVENTS_REDIS_TICKETS_PASSWORD
+      - EVENTS_REDIS_OPS_PASSWORD
+    healthcheck:
+      test: [
+        "CMD-SHELL",
+        "REDISCLI_AUTH=\"$$(cat /run/secrets/EVENTS_REDIS_OPS_PASSWORD)\" redis-cli --no-auth-warning --user ops ping | grep -q PONG",
+      ]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    # Unlike session storage, events must survive a restart: append-only file on a volume.
+    volumes:
+      - events-redis-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+    restart: unless-stopped
+    networks:
+      - events
+
+secrets:
+  EVENTS_REDIS_TICKETS_PASSWORD:
+    file: ./secrets/EVENTS_REDIS_TICKETS_PASSWORD
+  EVENTS_REDIS_OPS_PASSWORD:
+    file: ./secrets/EVENTS_REDIS_OPS_PASSWORD
+
+volumes:
+  events-redis-data:
+
+networks:
+  events:
+    internal: true
