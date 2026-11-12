@@ -3,6 +3,7 @@ name: crazy-ms
 # Each service is a plugin with its own compose file; add or remove one line to plug it in or out.
 include:
   - auth/compose.yaml
+  - events/compose.yaml
   - gateway/compose.yaml
   - tickets/compose.yaml
 

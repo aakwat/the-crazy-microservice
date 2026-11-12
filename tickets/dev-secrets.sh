@@ -1,5 +1,6 @@
 #!/bin/sh
 # Generates local development secrets for this plugin; never overwrites existing ones.
+# TICKETS_EVENTS_REDIS_PASSWORD is not made here: it must match the user the event bus creates.
 set -eu
 cd "$(dirname "$0")"
 umask 077
