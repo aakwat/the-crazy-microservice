@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "tickets.events",
   "title": "tickets.events envelope",
-  "description": "Thin events from the tickets outbox: ids and status only, never ticket text.",
+  "description": "Thin events from the tickets outbox: ids and status only, never ticket text. Each Redis stream entry holds this envelope as JSON in its `envelope` field.",
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "type", "version", "occurred_at", "subject_id", "traceparent", "payload"],

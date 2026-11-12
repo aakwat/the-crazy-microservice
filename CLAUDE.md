@@ -77,6 +77,8 @@ retries POST. Discovery is DNS (compose / k8s Service names). No gRPC.
   `attachment.uploaded`); image consumes that and never serves HTTP.
 - Only tickets has an outbox: it is the only DB-write-plus-publish. The relay
   claims rows with `FOR UPDATE SKIP LOCKED` so replicas never double-publish.
+- The bus is the `events/` plugin: one ACL user per service, limited to its
+  streams. Each entry holds the envelope as JSON in its `envelope` field.
 - Workers use consumer groups. Delivery is at-least-once, so every consumer
   dedupes on envelope `id`. `XAUTOCLAIM` stuck messages; after 5 deliveries move
   to `<stream>.dlq`. Trim with `MAXLEN ~`.
@@ -111,15 +113,16 @@ publish a port. Secrets are files under `/run/secrets`, never env vars
 (Spring reads them via `SPRING_CONFIG_IMPORT=configtree:/run/secrets/`,
 Postgres via `*_FILE`).
 
-| Service       | Inbound from                   | Outbound to                  |
-| ------------- | ------------------------------ | ---------------------------- |
-| auth          | `app` network (8080)           | auth-db                      |
-| auth-db       | auth only                      | none                         |
-| gateway       | host `127.0.0.1:8080` (`edge`) | auth, tickets, gateway-redis |
-| gateway-redis | gateway only                   | none                         |
-| tickets       | `app` network (8080)           | tickets-db, auth JWKS        |
-| tickets-db    | tickets only                   | none                         |
-| client        | none (tools profile)           | `app`                        |
+| Service       | Inbound from                       | Outbound to                         |
+| ------------- | ---------------------------------- | ----------------------------------- |
+| auth          | `app` network (8080)               | auth-db                             |
+| auth-db       | auth only                          | none                                |
+| gateway       | host `127.0.0.1:8080` (`edge`)     | auth, tickets, gateway-redis        |
+| gateway-redis | gateway only                       | none                                |
+| tickets       | `app` network (8080)               | tickets-db, auth JWKS, events-redis |
+| tickets-db    | tickets only                       | none                                |
+| events-redis  | `events` network (ACL per service) | none                                |
+| client        | none (tools profile)               | `app`                               |
 
 Browsers reach auth only through the gateway, which proxies its login pages on
 the same origin (`127.0.0.1:8080`), so `AUTH_ISSUER` is that public origin.
@@ -279,3 +282,35 @@ imports `org.springframework` has leaked one.
 - `Optional` for return values that may be absent. Never for fields or
   parameters.
 - Checked exceptions only where the caller can genuinely act on them.
+
+## Rust
+
+### Layout
+
+```
+domain       types and ports; no I/O, no framework
+application  use cases and policies over the ports
+adapters/*   one crate per technology (postgres, jwks, streams)
+api          HTTP, config, background jobs and main: the only crate that wires
+```
+
+Inside each crate, one module folder per feature (`ticket/`, `outbox/`), with
+the same names in every layer. One type per file, named after the type;
+`mod.rs` only declares and re-exports.
+
+### Style
+
+- The build is the standard: `cargo fmt --check`,
+  `cargo clippy --workspace --all-targets -- -D warnings` (pedantic, plus
+  `unwrap_used`, `expect_used`, `panic`, same as the template), then
+  `cargo test --workspace`. All three green before handing over.
+- A function does one thing. When a block needs a heading comment, make it a
+  function. Separate setup, action and result with a blank line.
+- No `unwrap`/`expect`/`panic` outside tests. A true invariant gets
+  `#[allow(clippy::expect_used, reason = "...")]` on the smallest item.
+- Logs are structured: `event = "area.thing.what"` plus fields, never prose.
+- Background jobs live in `api/src/jobs/`: `spawn` returns a `JoinHandle`, the
+  job stops on a `watch` signal after HTTP drains, and a job that ends early
+  stops the process so the container restarts.
+- Constants: `DEFAULT_*` env fallbacks, `MAX_`/`MIN_` limits, runtime knobs in
+  `api/src/config.rs`, business rules in their own layer.
