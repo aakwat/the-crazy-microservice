@@ -20,6 +20,7 @@ services:
       - AUTH_DB_MIGRATOR_PASSWORD
       - AUTH_CLIENT_GATEWAY_SECRET
       - AUTH_CLIENT_JOBS_SECRET
+      - AUTH_CLIENT_NOTIFICATIONS_SECRET
     volumes:
       # The project-specific part: another project mounts its own clients file here.
       - ./config/clients.yaml:/config/clients.yaml:ro
@@ -99,6 +100,8 @@ secrets:
     file: ./secrets/AUTH_CLIENT_GATEWAY_SECRET
   AUTH_CLIENT_JOBS_SECRET:
     file: ./secrets/AUTH_CLIENT_JOBS_SECRET
+  AUTH_CLIENT_NOTIFICATIONS_SECRET:
+    file: ./secrets/AUTH_CLIENT_NOTIFICATIONS_SECRET
 
 volumes:
   auth-db-data:

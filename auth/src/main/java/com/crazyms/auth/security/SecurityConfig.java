@@ -12,12 +12,12 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
-/** Everything the protocol and admin chains do not match: the login page, sign-up and health. */
+/** Everything the protocol, admin and internal chains do not match: login, sign-up and health. */
 @Configuration(proxyBeanMethods = false)
 class SecurityConfig {
 
   @Bean
-  @Order(3)
+  @Order(4)
   SecurityFilterChain applicationChain(HttpSecurity http) throws Exception {
     return http.authorizeHttpRequests(auth ->
             auth.dispatcherTypeMatchers(DispatcherType.ERROR)

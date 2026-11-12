@@ -10,6 +10,8 @@ final class TestClients {
   static final String POST_LOGOUT_URI = "http://127.0.0.1:9999/logged-out";
   static final String JOBS = "jobs";
   static final String JOBS_SECRET = "jobs-test-secret";
+  static final String NOTIFICATIONS = "notifications";
+  static final String NOTIFICATIONS_SECRET = "notifications-test-secret";
 
   private TestClients() {}
 }

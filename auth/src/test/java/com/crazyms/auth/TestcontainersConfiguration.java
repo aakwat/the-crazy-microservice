@@ -81,6 +81,10 @@ class TestcontainersConfiguration {
     p.put("auth.client.registrations[1].secret", TestClients.JOBS_SECRET);
     p.put("auth.client.registrations[1].grant-types[0]", "client_credentials");
     p.put("auth.client.registrations[1].scopes[0]", "tickets.read");
+    p.put("auth.client.registrations[2].id", TestClients.NOTIFICATIONS);
+    p.put("auth.client.registrations[2].secret", TestClients.NOTIFICATIONS_SECRET);
+    p.put("auth.client.registrations[2].grant-types[0]", "client_credentials");
+    p.put("auth.client.registrations[2].scopes[0]", "accounts.read");
     return p;
   }
 
