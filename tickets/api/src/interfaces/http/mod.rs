@@ -1,6 +1,7 @@
 //! The HTTP surface: every route, plus RFC 9457 problems for anything unmatched.
 
 mod extract;
+mod health;
 mod problem;
 mod tickets;
 
@@ -17,7 +18,7 @@ use crate::state::AppState;
 pub fn router(state: AppState) -> Router {
   Router::new()
     .merge(tickets::routes())
-    .route("/healthz", get(|| async { StatusCode::NO_CONTENT }))
+    .route("/healthz", get(health::health))
     .fallback(|| async { Problem::new(StatusCode::NOT_FOUND, "no such resource") })
     .method_not_allowed_fallback(|| async { Problem::new(StatusCode::METHOD_NOT_ALLOWED, "method not allowed") })
     .layer(DefaultBodyLimit::max(MAX_REQUEST_BYTES))

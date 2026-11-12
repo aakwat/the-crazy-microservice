@@ -4,7 +4,7 @@ use domain::{Principal, Ticket, TicketChange, TicketRepository};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::{AppError, TicketPage};
+use super::{AppError, TicketPage};
 
 pub struct TicketService<R> {
   repo: R,

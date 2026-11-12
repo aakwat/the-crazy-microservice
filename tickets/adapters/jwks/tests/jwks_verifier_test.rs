@@ -1,4 +1,5 @@
 //! Signs real ES256 tokens with fixed test keys and serves their JWKS from a mock auth.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 

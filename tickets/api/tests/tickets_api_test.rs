@@ -1,10 +1,12 @@
 //! Drives the real router against real Postgres 18 and a mock auth serving the test JWKS.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use api::config::AUDIENCE;
 use api::interfaces::http::router;
+use api::jobs::heartbeat::Heartbeat;
 use api::state::AppState;
 use application::TicketService;
 use axum::Router;
@@ -19,6 +21,7 @@ use sqlx::PgPool;
 use testcontainers::runners::AsyncRunner;
 use testcontainers::{ContainerAsync, ImageExt};
 use testcontainers_modules::postgres::Postgres;
+use time::OffsetDateTime;
 use tower::ServiceExt;
 use uuid::Uuid;
 use wiremock::matchers::path;
@@ -38,6 +41,7 @@ struct TestApi {
   _auth: MockServer,
   app: Router,
   pool: PgPool,
+  heartbeat: Arc<Heartbeat>,
 }
 
 impl TestApi {
@@ -78,15 +82,18 @@ impl TestApi {
       ten_minutes,
       ten_minutes,
     );
+    let heartbeat = Arc::new(Heartbeat::new(OffsetDateTime::now_utc()));
     let state = AppState {
       tickets: Arc::new(TicketService::new(PostgresTicketRepository::new(pool.clone()))),
       verifier: Arc::new(verifier),
+      heartbeat: Arc::clone(&heartbeat),
     };
     Self {
       _db: db,
       _auth: auth,
       app: router(state),
       pool,
+      heartbeat,
     }
   }
 
@@ -302,4 +309,17 @@ async fn writes_carry_the_gateways_traceparent_into_the_outbox() {
     .await
     .unwrap();
   assert_eq!(traceparent.as_deref(), Some(TRACE));
+}
+
+#[tokio::test]
+async fn health_turns_red_when_the_outbox_relay_falls_silent() {
+  let api = TestApi::start().await;
+  let now = OffsetDateTime::now_utc();
+
+  let alive = api.send("GET", "/healthz", None, None).await;
+  api.heartbeat.beat(now - time::Duration::minutes(2));
+  let silent = api.send("GET", "/healthz", None, None).await;
+
+  assert_eq!(alive.status, StatusCode::NO_CONTENT);
+  assert_eq!(silent.status, StatusCode::SERVICE_UNAVAILABLE);
 }

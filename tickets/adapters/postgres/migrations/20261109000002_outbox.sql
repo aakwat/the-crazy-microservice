@@ -15,3 +15,6 @@ CREATE TABLE outbox (
 
 -- The relay only scans unpublished rows, oldest first.
 CREATE INDEX idx_outbox_unpublished ON outbox (occurred_at) WHERE published_at IS NULL;
+
+-- The retention sweep deletes published rows by age.
+CREATE INDEX idx_outbox_published   ON outbox (published_at) WHERE published_at IS NOT NULL;

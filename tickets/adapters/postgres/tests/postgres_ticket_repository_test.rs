@@ -1,12 +1,10 @@
-//! Runs against real Postgres 18 with the real roles script: migrates as the owner, works as the app.
+//! The ticket repository and its outbox writes against real Postgres.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 
+mod common;
+
+use common::TestDb;
 use domain::{Ticket, TicketChange, TicketRepository, TicketStatus};
-use postgres::PostgresTicketRepository;
-use serde_json::Value;
-use sqlx::PgPool;
-use testcontainers::runners::AsyncRunner;
-use testcontainers::{ContainerAsync, ImageExt};
-use testcontainers_modules::postgres::Postgres;
 use time::OffsetDateTime;
 use time::macros::datetime;
 use uuid::Uuid;
@@ -14,56 +12,6 @@ use uuid::Uuid;
 const T0: OffsetDateTime = datetime!(2026-11-09 09:00 UTC);
 const T1: OffsetDateTime = datetime!(2026-11-09 10:00 UTC);
 const TRACE: &str = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
-
-struct TestDb {
-  _container: ContainerAsync<Postgres>,
-  app: PgPool,
-}
-
-impl TestDb {
-  async fn start() -> Self {
-    let container = Postgres::default()
-      .with_db_name("tickets")
-      .with_tag("18-alpine")
-      .with_copy_to(
-        "/docker-entrypoint-initdb.d/01-roles.sql",
-        include_bytes!("../../../db/init/01-roles.sql").to_vec(),
-      )
-      .with_copy_to(
-        "/run/secrets/TICKETS_DB_MIGRATOR_PASSWORD",
-        b"migrator-test-password".to_vec(),
-      )
-      .with_copy_to("/run/secrets/TICKETS_DB_APP_PASSWORD", b"app-test-password".to_vec())
-      .start()
-      .await
-      .expect("start postgres");
-    let port = container.get_host_port_ipv4(5432).await.expect("postgres port");
-    let url = |user: &str, password: &str| format!("postgres://{user}:{password}@127.0.0.1:{port}/tickets");
-
-    let migrator = PgPool::connect(&url("tickets_migrator", "migrator-test-password"))
-      .await
-      .expect("migrator");
-    postgres::migrate(&migrator).await.expect("migrate");
-    let app = PgPool::connect(&url("tickets_app", "app-test-password"))
-      .await
-      .expect("app");
-    Self {
-      _container: container,
-      app,
-    }
-  }
-
-  fn repo(&self) -> PostgresTicketRepository {
-    PostgresTicketRepository::new(self.app.clone())
-  }
-
-  async fn events(&self) -> Vec<(String, Value)> {
-    sqlx::query_as("SELECT type, payload FROM outbox ORDER BY id")
-      .fetch_all(&self.app)
-      .await
-      .expect("outbox")
-  }
-}
 
 fn ticket_for(requester: Uuid) -> Ticket {
   Ticket::open(requester, "Printer on fire", "Please help.", T0).unwrap()

@@ -5,9 +5,9 @@ use sqlx::{PgPool, query, query_as};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::outbox;
-use crate::ticket_row::TicketRow;
-use crate::ticket_summary_row::TicketSummaryRow;
+use super::ticket_row::TicketRow;
+use super::ticket_summary_row::TicketSummaryRow;
+use crate::{outbox, store};
 
 pub struct PostgresTicketRepository {
   pool: PgPool,
@@ -105,8 +105,4 @@ impl TicketRepository for PostgresTicketRepository {
     .map_err(store)?;
     rows.into_iter().map(TicketSummaryRow::into_summary).collect()
   }
-}
-
-fn store(error: sqlx::Error) -> StoreError {
-  StoreError(Box::new(error))
 }

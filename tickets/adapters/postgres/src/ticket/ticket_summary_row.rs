@@ -4,7 +4,7 @@ use domain::{StoreError, TicketSummary};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::ticket_row::parse_status;
+use super::ticket_row::parse_status;
 
 #[derive(sqlx::FromRow)]
 pub(crate) struct TicketSummaryRow {

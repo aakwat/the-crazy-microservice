@@ -7,6 +7,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use sqlx::postgres::PgConnectOptions;
+use streams::BusAddress;
 
 /// The `aud` every service checks in access tokens (CLAUDE.md, identity).
 pub const AUDIENCE: &str = "crazy-ms";
@@ -26,6 +27,16 @@ pub const AUTH_TIMEOUT: Duration = Duration::from_secs(5);
 pub const MAX_KEY_AGE: Duration = Duration::from_secs(600);
 /// Signing keys are fetched at most this often.
 pub const MIN_REFETCH_INTERVAL: Duration = Duration::from_secs(30);
+/// Event bus port when `TICKETS_EVENTS_REDIS_PORT` is unset.
+pub const DEFAULT_EVENTS_REDIS_PORT: &str = "6379";
+/// How long one call to the event bus may take.
+pub const EVENTS_TIMEOUT: Duration = Duration::from_secs(2);
+/// Health turns red when the outbox relay has not finished a round for this long.
+pub const MAX_RELAY_SILENCE: Duration = Duration::from_secs(60);
+/// How long shutdown waits for the relay round in flight; below the container's stop grace period.
+pub const RELAY_DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
+/// How often published outbox events past their retention are purged.
+pub const OUTBOX_PURGE_INTERVAL: Duration = Duration::from_secs(3600);
 
 pub struct Config {
   pub listen: SocketAddr,
@@ -38,6 +49,10 @@ pub struct Config {
   app_password: String,
   migrator_user: String,
   migrator_password: String,
+  events_host: String,
+  events_port: u16,
+  events_user: String,
+  events_password: String,
 }
 
 impl Config {
@@ -58,6 +73,10 @@ impl Config {
       app_password: loader.secret(&secrets_dir, "TICKETS_DB_APP_PASSWORD"),
       migrator_user: loader.required("TICKETS_DB_MIGRATOR_USER"),
       migrator_password: loader.secret(&secrets_dir, "TICKETS_DB_MIGRATOR_PASSWORD"),
+      events_host: loader.required("TICKETS_EVENTS_REDIS_HOST"),
+      events_port: loader.parsed("TICKETS_EVENTS_REDIS_PORT", DEFAULT_EVENTS_REDIS_PORT),
+      events_user: loader.required("TICKETS_EVENTS_REDIS_USER"),
+      events_password: loader.secret(&secrets_dir, "TICKETS_EVENTS_REDIS_PASSWORD"),
     };
     if loader.problems.is_empty() {
       Ok(config)
@@ -74,6 +93,15 @@ impl Config {
   /// The DML-only connection every request uses.
   pub fn app_db(&self) -> PgConnectOptions {
     self.db(&self.app_user, &self.app_password)
+  }
+
+  pub fn events_bus(&self) -> BusAddress {
+    BusAddress {
+      host: self.events_host.clone(),
+      port: self.events_port,
+      user: self.events_user.clone(),
+      password: self.events_password.clone(),
+    }
   }
 
   fn db(&self, user: &str, password: &str) -> PgConnectOptions {
@@ -108,6 +136,10 @@ impl<F: Fn(&str) -> Option<String>> Loader<F> {
   }
 
   /// Falls back to the default, which is always valid, so loading can go on and report every problem.
+  #[allow(
+    clippy::expect_used,
+    reason = "defaults are constants in this file and the config test loads them all"
+  )]
   fn parsed<T: FromStr>(&mut self, name: &str, fallback: &str) -> T
   where
     T::Err: Debug,
@@ -146,6 +178,8 @@ mod tests {
       "AUTH_JWKS_URL",
       "TICKETS_DB_HOST",
       "TICKETS_DB_APP_PASSWORD",
+      "TICKETS_EVENTS_REDIS_HOST",
+      "TICKETS_EVENTS_REDIS_PASSWORD",
     ] {
       assert!(error.contains(name), "{name} missing from: {error}");
     }

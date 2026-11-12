@@ -46,7 +46,7 @@ impl From<AppError> for Problem {
       AppError::Conflict => Self::new(StatusCode::CONFLICT, error.to_string()),
       AppError::Invalid(invalid) => Self::new(StatusCode::UNPROCESSABLE_ENTITY, invalid.to_string()),
       AppError::Store(store) => {
-        tracing::error!(error = %store, "store failed");
+        tracing::error!(event = "store.failed", error = %store);
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, "unexpected error")
       }
     }
@@ -58,11 +58,11 @@ impl From<TokenError> for Problem {
   fn from(error: TokenError) -> Self {
     match error {
       TokenError::Invalid(reason) => {
-        tracing::debug!(reason, "access token refused");
+        tracing::debug!(event = "auth.token_refused", reason);
         Self::new(StatusCode::UNAUTHORIZED, "log in or send a valid access token")
       }
       TokenError::Unavailable(reason) => {
-        tracing::warn!(reason, "signing keys unavailable");
+        tracing::warn!(event = "auth.keys_unavailable", reason);
         Self::new(StatusCode::SERVICE_UNAVAILABLE, "sign-in is unavailable; try again")
       }
     }
