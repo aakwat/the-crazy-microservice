@@ -50,14 +50,16 @@ to the browser. Workers (jobs, ai) use `client_credentials`. Access tokens carry
 `client_id` claim. Every service verifies against cached JWKS (refetch on
 unknown `kid`) **and requires `typ: at+jwt`**, so an ID token is never accepted
 as an access token; none trusts an identity header. Auth's custom endpoints are
-`POST /auth/register` and the admin-only role API (`GET /auth/accounts?email=`,
-`PUT /auth/accounts/{id}/role`); a role change reaches tokens at the next refresh.
+`POST /auth/register`, the admin-only role API (`GET /auth/accounts?email=`,
+`PUT /auth/accounts/{id}/role`; a role change reaches tokens at the next refresh)
+and `GET /internal/accounts/{id}` (email only, scope `accounts.read`).
 
 **Sync HTTP (JSON), kept minimal.** Only: gateway → auth, tickets (proxy) and
 → realtime (WS), services → auth JWKS, jobs and ai → tickets `GET /internal/*`
-(reads only), ai → Ollama. Permission checks live in the owning service. The
-gateway returns 404 for `/internal/*`, caps bodies, sets timeouts, and never
-retries POST. Discovery is DNS (compose / k8s Service names). No gRPC.
+(reads only), notifications → auth `GET /internal/accounts/{id}`, ai → Ollama.
+Permission checks live in the owning service. The gateway returns 404 for
+`/internal/*`, caps bodies, sets timeouts, and never retries POST. Discovery is
+DNS (compose / k8s Service names). No gRPC.
 
 **Events (Redis Streams).** Envelope:
 `{id: uuidv7, type, version, occurred_at: RFC3339, subject_id, traceparent, payload}`.

@@ -69,6 +69,21 @@ paths:
         "404": { $ref: "#/components/responses/Problem" }
         "409": { $ref: "#/components/responses/Problem" }
         "422": { $ref: "#/components/responses/Problem" }
+  /internal/accounts/{id}:
+    get:
+      summary: Services with scope accounts.read only; the email for an account id. The gateway returns 404 here.
+      security: [{ bearer: [accounts.read] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The account's email, nothing else
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccountEmail" }
+        "401": { description: No valid access token (RFC 6750) }
+        "403": { description: Token lacks scope accounts.read (RFC 6750 insufficient_scope) }
+        "404": { $ref: "#/components/responses/Problem" }
 components:
   securitySchemes:
     bearer: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -104,6 +119,12 @@ components:
           maxLength: 32,
           examples: [customer, agent, admin],
         }
+    AccountEmail:
+      type: object
+      required: [id, email]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
     Account:
       type: object
       required: [id, email, role]
