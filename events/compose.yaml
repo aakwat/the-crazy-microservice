@@ -12,12 +12,15 @@ services:
             echo 'user default off'
             echo "user tickets on #$$(hash EVENTS_REDIS_TICKETS_PASSWORD) ~tickets.events resetchannels -@all +@connection +xadd"
             echo "user ops on #$$(hash EVENTS_REDIS_OPS_PASSWORD) ~* resetchannels -@all +@connection +xrange +xrevrange +xlen +xinfo"
+            # The (...) selector lets notifications add to the dead-letter stream and nowhere else.
+            echo "user notifications on #$$(hash EVENTS_REDIS_NOTIFICATIONS_PASSWORD) resetchannels -@all +@connection ~tickets.events +xreadgroup +xack +xautoclaim +xpending +xgroup|create (~tickets.events.dlq +xadd)"
           } > /tmp/users.acl
           exec redis-server --aclfile /tmp/users.acl --dir /data --appendonly yes --save '' \
             --maxmemory 128mb --maxmemory-policy noeviction
     secrets:
       - EVENTS_REDIS_TICKETS_PASSWORD
       - EVENTS_REDIS_OPS_PASSWORD
+      - EVENTS_REDIS_NOTIFICATIONS_PASSWORD
     healthcheck:
       test: [
         "CMD-SHELL",
@@ -47,6 +50,8 @@ secrets:
     file: ./secrets/EVENTS_REDIS_TICKETS_PASSWORD
   EVENTS_REDIS_OPS_PASSWORD:
     file: ./secrets/EVENTS_REDIS_OPS_PASSWORD
+  EVENTS_REDIS_NOTIFICATIONS_PASSWORD:
+    file: ./secrets/EVENTS_REDIS_NOTIFICATIONS_PASSWORD
 
 volumes:
   events-redis-data:

@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 umask 077
 mkdir -p secrets
 
-for name in EVENTS_REDIS_TICKETS_PASSWORD EVENTS_REDIS_OPS_PASSWORD; do
+for name in EVENTS_REDIS_TICKETS_PASSWORD EVENTS_REDIS_OPS_PASSWORD EVENTS_REDIS_NOTIFICATIONS_PASSWORD; do
   [ -f "secrets/$name" ] || openssl rand -hex 32 | tr -d '\n' >"secrets/$name"
 done
 

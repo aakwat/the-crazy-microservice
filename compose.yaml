@@ -5,6 +5,7 @@ include:
   - auth/compose.yaml
   - events/compose.yaml
   - gateway/compose.yaml
+  - notifications/compose.yaml
   - tickets/compose.yaml
 
 services:
