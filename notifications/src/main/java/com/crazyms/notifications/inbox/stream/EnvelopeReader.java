@@ -36,6 +36,7 @@ class EnvelopeReader {
         uuid(root, "id"),
         type,
         uuid(payload, "ticket_id"),
+        text(payload, "reference"),
         text(payload, "status"),
         uuid(payload, "requester_id"),
         nullableUuid(payload, "assignee_id"));

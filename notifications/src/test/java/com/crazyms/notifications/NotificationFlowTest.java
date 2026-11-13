@@ -132,7 +132,7 @@ class NotificationFlowTest {
     var assigneeJson = assignee == null ? "null" : "\"" + assignee + "\"";
     return """
     {"id":"%s","type":"%s","version":1,"occurred_at":"2026-11-12T09:00:00Z",\
-    "subject_id":"%s","traceparent":null,"payload":{"ticket_id":"%s","status":"%s",\
+    "subject_id":"%s","traceparent":null,"payload":{"ticket_id":"%s","reference":"T-1","status":"%s",\
     "requester_id":"%s","assignee_id":%s}}\
     """
         .formatted(eventId, type, ticket, ticket, status, requester, assigneeJson);

@@ -10,6 +10,7 @@ public record TicketEvent(
     UUID id,
     TicketEventType type,
     UUID ticketId,
+    String reference,
     String status,
     UUID requesterId,
     UUID assigneeId) {
@@ -18,6 +19,7 @@ public record TicketEvent(
     requireNonNull(id, "id");
     requireNonNull(type, "type");
     requireNonNull(ticketId, "ticketId");
+    requireNonNull(reference, "reference");
     requireNonNull(status, "status");
     requireNonNull(requesterId, "requesterId");
   }
@@ -35,6 +37,6 @@ public record TicketEvent(
   }
 
   private Notification notify(UUID recipientId, NotificationReason reason) {
-    return new Notification(id, recipientId, ticketId, status, reason);
+    return new Notification(id, recipientId, reference, status, reason);
   }
 }

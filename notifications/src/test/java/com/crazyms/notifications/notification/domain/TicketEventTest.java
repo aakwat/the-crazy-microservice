@@ -39,6 +39,6 @@ class TicketEventTest {
 
   private TicketEvent event(TicketEventType type, UUID assigneeId) {
     return new TicketEvent(
-        UUID.randomUUID(), type, UUID.randomUUID(), "in_progress", requester, assigneeId);
+        UUID.randomUUID(), type, UUID.randomUUID(), "T-1", "in_progress", requester, assigneeId);
   }
 }
