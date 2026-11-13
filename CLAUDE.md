@@ -110,21 +110,24 @@ may reference another plugin's internals.
 
 ### Inbound / outbound (compose networks now, NetworkPolicy later)
 
-All networks are `internal: true` (no internet egress); only the gateway will
-publish a port. Secrets are files under `/run/secrets`, never env vars
-(Spring reads them via `SPRING_CONFIG_IMPORT=configtree:/run/secrets/`,
-Postgres via `*_FILE`).
+All networks are `internal: true` (no internet egress); only the gateway
+publishes a port, plus the dev-only Mailpit UI on `127.0.0.1:8025`. Secrets are
+files under `/run/secrets`, never env vars (Spring reads them via
+`SPRING_CONFIG_IMPORT=configtree:/run/secrets/`, Postgres via `*_FILE`).
 
-| Service       | Inbound from                       | Outbound to                         |
-| ------------- | ---------------------------------- | ----------------------------------- |
-| auth          | `app` network (8080)               | auth-db                             |
-| auth-db       | auth only                          | none                                |
-| gateway       | host `127.0.0.1:8080` (`edge`)     | auth, tickets, gateway-redis        |
-| gateway-redis | gateway only                       | none                                |
-| tickets       | `app` network (8080)               | tickets-db, auth JWKS, events-redis |
-| tickets-db    | tickets only                       | none                                |
-| events-redis  | `events` network (ACL per service) | none                                |
-| client        | none (tools profile)               | `app`                               |
+| Service          | Inbound from                                               | Outbound to                                               |
+| ---------------- | ---------------------------------------------------------- | --------------------------------------------------------- |
+| auth             | `app` network (8080)                                       | auth-db                                                   |
+| auth-db          | auth only                                                  | none                                                      |
+| gateway          | host `127.0.0.1:8080` (`edge`)                             | auth, tickets, gateway-redis                              |
+| gateway-redis    | gateway only                                               | none                                                      |
+| tickets          | `app` network (8080)                                       | tickets-db, auth JWKS, events-redis                       |
+| tickets-db       | tickets only                                               | none                                                      |
+| events-redis     | `events` network (ACL per service)                         | none                                                      |
+| notifications    | none (no API; health probes only)                          | auth `/internal`, events-redis, notifications-db, mailpit |
+| notifications-db | notifications only                                         | none                                                      |
+| mailpit          | notifications (SMTP); host `127.0.0.1:8025` (UI, dev only) | none                                                      |
+| client           | none (tools profile)                                       | `app`                                                     |
 
 Browsers reach auth only through the gateway, which proxies its login pages on
 the same origin (`127.0.0.1:8080`), so `AUTH_ISSUER` is that public origin.
