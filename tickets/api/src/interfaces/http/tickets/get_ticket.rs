@@ -18,5 +18,6 @@ pub async fn get_ticket(
 ) -> Result<Json<TicketResponse>, Problem> {
   // A malformed id names no ticket.
   let Path(id) = id.map_err(|_| AppError::NotFound)?;
-  Ok(Json(state.tickets.get(&who, id).await?.into()))
+  let ticket = state.tickets.get(&who, id).await?;
+  Ok(Json(TicketResponse::for_viewer(&ticket, &who)))
 }

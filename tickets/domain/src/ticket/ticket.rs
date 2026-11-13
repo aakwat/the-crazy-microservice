@@ -3,7 +3,7 @@
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use super::{TicketChange, TicketError, TicketStatus};
+use super::{TicketChange, TicketError, TicketNumber, TicketStatus};
 
 /// Longest title in characters; the database enforces the same limit.
 pub const MAX_TITLE_CHARS: usize = 200;
@@ -14,6 +14,7 @@ pub const MAX_BODY_CHARS: usize = 10_000;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ticket {
   id: Uuid,
+  number: TicketNumber,
   requester_id: Uuid,
   assignee_id: Option<Uuid>,
   title: String,
@@ -25,7 +26,13 @@ pub struct Ticket {
 
 impl Ticket {
   /// Opens a ticket; both texts are trimmed and must fit their limits.
-  pub fn open(requester_id: Uuid, title: &str, body: &str, now: OffsetDateTime) -> Result<Self, TicketError> {
+  pub fn open(
+    number: TicketNumber,
+    requester_id: Uuid,
+    title: &str,
+    body: &str,
+    now: OffsetDateTime,
+  ) -> Result<Self, TicketError> {
     let (title, body, now) = (title.trim(), body.trim(), stored_precision(now));
     if !fits(title, MAX_TITLE_CHARS) {
       return Err(TicketError::Title);
@@ -35,6 +42,7 @@ impl Ticket {
     }
     Ok(Self {
       id: Uuid::now_v7(),
+      number,
       requester_id,
       assignee_id: None,
       title: title.to_owned(),
@@ -77,6 +85,7 @@ impl Ticket {
   )]
   pub fn from_persistence(
     id: Uuid,
+    number: TicketNumber,
     requester_id: Uuid,
     assignee_id: Option<Uuid>,
     title: String,
@@ -87,6 +96,7 @@ impl Ticket {
   ) -> Self {
     Self {
       id,
+      number,
       requester_id,
       assignee_id,
       title,
@@ -99,6 +109,10 @@ impl Ticket {
 
   pub fn id(&self) -> Uuid {
     self.id
+  }
+
+  pub fn number(&self) -> TicketNumber {
+    self.number
   }
 
   pub fn requester_id(&self) -> Uuid {
@@ -153,8 +167,12 @@ mod tests {
   const T0: OffsetDateTime = datetime!(2026-11-09 09:00 UTC);
   const T1: OffsetDateTime = datetime!(2026-11-09 10:00 UTC);
 
+  fn open(requester: Uuid, title: &str, body: &str, now: OffsetDateTime) -> Result<Ticket, TicketError> {
+    Ticket::open(TicketNumber::new(1), requester, title, body, now)
+  }
+
   fn open_ticket() -> Ticket {
-    Ticket::open(Uuid::now_v7(), "  Printer on fire  ", "Please help.", T0).unwrap()
+    open(Uuid::now_v7(), "  Printer on fire  ", "Please help.", T0).unwrap()
   }
 
   fn move_to(status: TicketStatus) -> TicketChange {
@@ -177,7 +195,7 @@ mod tests {
   fn open_counts_characters_not_bytes() {
     let title = "မ".repeat(MAX_TITLE_CHARS);
 
-    assert!(Ticket::open(Uuid::now_v7(), &title, "body", T0).is_ok());
+    assert!(open(Uuid::now_v7(), &title, "body", T0).is_ok());
   }
 
   #[test]
@@ -186,16 +204,10 @@ mod tests {
     let too_long_title = "x".repeat(MAX_TITLE_CHARS + 1);
     let too_long_body = "x".repeat(MAX_BODY_CHARS + 1);
 
-    assert_eq!(Ticket::open(requester, "   ", "body", T0), Err(TicketError::Title));
-    assert_eq!(
-      Ticket::open(requester, &too_long_title, "body", T0),
-      Err(TicketError::Title)
-    );
-    assert_eq!(Ticket::open(requester, "title", " \n", T0), Err(TicketError::Body));
-    assert_eq!(
-      Ticket::open(requester, "title", &too_long_body, T0),
-      Err(TicketError::Body)
-    );
+    assert_eq!(open(requester, "   ", "body", T0), Err(TicketError::Title));
+    assert_eq!(open(requester, &too_long_title, "body", T0), Err(TicketError::Title));
+    assert_eq!(open(requester, "title", " \n", T0), Err(TicketError::Body));
+    assert_eq!(open(requester, "title", &too_long_body, T0), Err(TicketError::Body));
   }
 
   #[test]
@@ -228,6 +240,7 @@ mod tests {
     let open = open_ticket();
     let mut ticket = Ticket::from_persistence(
       open.id(),
+      open.number(),
       open.requester_id(),
       None,
       open.title().to_owned(),
@@ -283,19 +296,16 @@ mod tests {
     let requester = Uuid::now_v7();
     let padded = format!("{}   ", "x".repeat(MAX_BODY_CHARS));
 
-    assert_eq!(
-      Ticket::open(requester, "t", &padded, T0).unwrap().body().len(),
-      MAX_BODY_CHARS
-    );
-    assert_eq!(Ticket::open(requester, "a\0b", "body", T0), Err(TicketError::Title));
-    assert_eq!(Ticket::open(requester, "title", "a\0b", T0), Err(TicketError::Body));
+    assert_eq!(open(requester, "t", &padded, T0).unwrap().body().len(), MAX_BODY_CHARS);
+    assert_eq!(open(requester, "a\0b", "body", T0), Err(TicketError::Title));
+    assert_eq!(open(requester, "title", "a\0b", T0), Err(TicketError::Body));
   }
 
   #[test]
   fn times_are_kept_to_microseconds_like_postgres() {
     let precise = T0.replace_nanosecond(123_456_789).unwrap();
 
-    let ticket = Ticket::open(Uuid::now_v7(), "title", "body", precise).unwrap();
+    let ticket = open(Uuid::now_v7(), "title", "body", precise).unwrap();
 
     assert_eq!(ticket.created_at().nanosecond(), 123_456_000);
   }

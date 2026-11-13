@@ -54,5 +54,5 @@ pub async fn change_ticket(
     .tickets
     .change(&who, id, change, now, traceparent.as_deref())
     .await?;
-  Ok(Json(ticket.into()))
+  Ok(Json(TicketResponse::for_viewer(&ticket, &who)))
 }

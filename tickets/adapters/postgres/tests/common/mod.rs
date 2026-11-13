@@ -1,6 +1,9 @@
 //! Real Postgres 18 with the real roles script: migrates as the owner, works as the app.
 #![allow(dead_code)]
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use domain::TicketNumber;
 use postgres::{PostgresOutbox, PostgresTicketRepository};
 use serde_json::Value;
 use sqlx::PgPool;
@@ -60,4 +63,10 @@ impl TestDb {
       .await
       .expect("outbox")
   }
+}
+
+/// Unique within one test process; every test has its own database, so that is enough.
+pub fn number() -> TicketNumber {
+  static NEXT: AtomicU64 = AtomicU64::new(1);
+  TicketNumber::new(NEXT.fetch_add(1, Ordering::Relaxed))
 }

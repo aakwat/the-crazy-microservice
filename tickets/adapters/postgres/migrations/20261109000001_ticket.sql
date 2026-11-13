@@ -1,8 +1,13 @@
 -- ticket: one support request. Only this service writes it; other services change it by event.
 --
 -- Limits and statuses mirror domain::Ticket, so a bug there still cannot store a bad row.
+
+-- Short numbers customers quote (T-1042); the service takes one before it stores the ticket.
+CREATE SEQUENCE ticket_number_seq;
+
 CREATE TABLE ticket (
   id            UUID         PRIMARY KEY DEFAULT uuidv7(),
+  number        BIGINT       NOT NULL UNIQUE CHECK (number > 0),
   requester_id  UUID         NOT NULL,
   assignee_id   UUID,
   title         TEXT         NOT NULL CHECK (char_length(title) BETWEEN 1 AND 200),

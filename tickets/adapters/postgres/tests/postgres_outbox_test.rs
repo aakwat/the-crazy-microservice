@@ -15,7 +15,7 @@ const T0: OffsetDateTime = datetime!(2026-11-12 09:00 UTC);
 
 async fn create_tickets(db: &TestDb, count: usize) {
   for _ in 0..count {
-    let ticket = Ticket::open(Uuid::now_v7(), "Printer on fire", "Please help.", T0).unwrap();
+    let ticket = Ticket::open(common::number(), Uuid::now_v7(), "Printer on fire", "Please help.", T0).unwrap();
     db.repo().create(&ticket, None).await.unwrap();
   }
 }

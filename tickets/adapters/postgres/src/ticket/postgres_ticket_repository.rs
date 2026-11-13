@@ -1,11 +1,11 @@
 //! `PostgresTicketRepository` — tickets and their outbox events in Postgres.
 
-use domain::{StoreError, Ticket, TicketRepository, TicketSummary};
-use sqlx::{PgPool, query, query_as};
+use domain::{StoreError, Ticket, TicketNumber, TicketRepository, TicketSummary};
+use sqlx::{PgPool, query, query_as, query_scalar};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use super::ticket_row::TicketRow;
+use super::ticket_row::{TicketRow, parse_number, stored_number};
 use super::ticket_summary_row::TicketSummaryRow;
 use crate::{outbox, store};
 
@@ -20,13 +20,22 @@ impl PostgresTicketRepository {
 }
 
 impl TicketRepository for PostgresTicketRepository {
+  async fn next_number(&self) -> Result<TicketNumber, StoreError> {
+    let next: i64 = query_scalar("SELECT nextval('ticket_number_seq')")
+      .fetch_one(&self.pool)
+      .await
+      .map_err(store)?;
+    parse_number(next)
+  }
+
   async fn create(&self, ticket: &Ticket, traceparent: Option<&str>) -> Result<(), StoreError> {
     let mut tx = self.pool.begin().await.map_err(store)?;
     query(
-      "INSERT INTO ticket (id, requester_id, assignee_id, title, body, status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+      "INSERT INTO ticket (id, number, requester_id, assignee_id, title, body, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
     )
     .bind(ticket.id())
+    .bind(stored_number(ticket.number())?)
     .bind(ticket.requester_id())
     .bind(ticket.assignee_id())
     .bind(ticket.title())
@@ -75,7 +84,7 @@ impl TicketRepository for PostgresTicketRepository {
 
   async fn find(&self, id: Uuid) -> Result<Option<Ticket>, StoreError> {
     let row: Option<TicketRow> = query_as(
-      "SELECT id, requester_id, assignee_id, title, body, status, created_at, updated_at
+      "SELECT id, number, requester_id, assignee_id, title, body, status, created_at, updated_at
        FROM ticket WHERE id = $1",
     )
     .bind(id)
@@ -92,7 +101,7 @@ impl TicketRepository for PostgresTicketRepository {
     limit: u32,
   ) -> Result<Vec<TicketSummary>, StoreError> {
     let rows: Vec<TicketSummaryRow> = query_as(
-      "SELECT id, requester_id, assignee_id, title, status, updated_at
+      "SELECT id, number, requester_id, assignee_id, title, status, updated_at
        FROM ticket
        WHERE ($1::uuid IS NULL OR requester_id = $1) AND ($2::uuid IS NULL OR id < $2)
        ORDER BY id DESC LIMIT $3",

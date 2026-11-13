@@ -12,7 +12,7 @@ pub use outbox::{EventPublisher, Outbox, OutboxBatch, OutboxEvent, PublishError}
 pub use principal::{AGENT_ROLE, Principal};
 pub use store_error::StoreError;
 pub use ticket::{
-  AssigneeChange, MAX_BODY_CHARS, MAX_TITLE_CHARS, Ticket, TicketChange, TicketError, TicketRepository, TicketStatus,
-  TicketSummary,
+  AssigneeChange, MAX_BODY_CHARS, MAX_TITLE_CHARS, Ticket, TicketChange, TicketError, TicketNumber, TicketRepository,
+  TicketStatus, TicketSummary,
 };
 pub use token_error::TokenError;

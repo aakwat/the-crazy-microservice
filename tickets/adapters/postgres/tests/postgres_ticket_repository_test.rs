@@ -14,7 +14,7 @@ const T1: OffsetDateTime = datetime!(2026-11-09 10:00 UTC);
 const TRACE: &str = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
 
 fn ticket_for(requester: Uuid) -> Ticket {
-  Ticket::open(requester, "Printer on fire", "Please help.", T0).unwrap()
+  Ticket::open(common::number(), requester, "Printer on fire", "Please help.", T0).unwrap()
 }
 
 #[tokio::test]
@@ -100,7 +100,14 @@ async fn the_app_role_cannot_change_the_schema_or_store_a_bad_status() {
 async fn a_ticket_opened_with_nanoseconds_can_be_updated_with_its_own_timestamp() {
   let db = TestDb::start().await;
   let precise = T0.replace_nanosecond(123_456_789).unwrap();
-  let ticket = Ticket::open(Uuid::now_v7(), "Printer on fire", "Please help.", precise).unwrap();
+  let ticket = Ticket::open(
+    common::number(),
+    Uuid::now_v7(),
+    "Printer on fire",
+    "Please help.",
+    precise,
+  )
+  .unwrap();
   db.repo().create(&ticket, None).await.unwrap();
   let mut changed = ticket.clone();
   changed
@@ -114,4 +121,18 @@ async fn a_ticket_opened_with_nanoseconds_can_be_updated_with_its_own_timestamp(
     .unwrap();
 
   assert!(db.repo().update(&changed, ticket.updated_at(), None).await.unwrap());
+}
+
+#[tokio::test]
+async fn numbers_grow_and_a_stored_ticket_keeps_its_number() {
+  let db = TestDb::start().await;
+  let first = db.repo().next_number().await.unwrap();
+  let second = db.repo().next_number().await.unwrap();
+  let ticket = Ticket::open(second, Uuid::now_v7(), "Printer on fire", "Please help.", T0).unwrap();
+
+  db.repo().create(&ticket, None).await.unwrap();
+
+  assert!(second.value() > first.value());
+  assert_eq!(db.repo().find(ticket.id()).await.unwrap().unwrap().number(), second);
+  assert_eq!(db.events().await[0].1["reference"], second.to_string());
 }

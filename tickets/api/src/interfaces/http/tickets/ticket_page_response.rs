@@ -1,6 +1,7 @@
 //! `TicketPageResponse` — the wire shape of one page of tickets.
 
 use application::TicketPage;
+use domain::Principal;
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -13,10 +14,14 @@ pub struct TicketPageResponse {
   next_before: Option<Uuid>,
 }
 
-impl From<TicketPage> for TicketPageResponse {
-  fn from(page: TicketPage) -> Self {
+impl TicketPageResponse {
+  pub fn for_viewer(page: TicketPage, who: &Principal) -> Self {
     Self {
-      items: page.items.into_iter().map(TicketSummaryResponse::from).collect(),
+      items: page
+        .items
+        .into_iter()
+        .map(|summary| TicketSummaryResponse::for_viewer(summary, who))
+        .collect(),
       next_before: page.next_before,
     }
   }

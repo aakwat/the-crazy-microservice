@@ -36,6 +36,6 @@ pub async fn create_ticket(
   Ok((
     StatusCode::CREATED,
     [(LOCATION, location)],
-    Json(TicketResponse::from(ticket)),
+    Json(TicketResponse::for_viewer(&ticket, &who)),
   ))
 }

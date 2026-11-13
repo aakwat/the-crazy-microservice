@@ -23,7 +23,8 @@ impl<R: TicketRepository> TicketService<R> {
     now: OffsetDateTime,
     traceparent: Option<&str>,
   ) -> Result<Ticket, AppError> {
-    let ticket = Ticket::open(who.subject(), title, body, now)?;
+    let number = self.repo.next_number().await?;
+    let ticket = Ticket::open(number, who.subject(), title, body, now)?;
     self.repo.create(&ticket, traceparent).await?;
     Ok(ticket)
   }
@@ -71,7 +72,7 @@ mod tests {
   use std::collections::HashMap;
   use std::sync::Mutex;
 
-  use domain::{StoreError, TicketError, TicketStatus, TicketSummary};
+  use domain::{StoreError, TicketError, TicketNumber, TicketStatus, TicketSummary};
   use time::macros::datetime;
 
   use super::*;
@@ -86,6 +87,11 @@ mod tests {
   // The trait is async for real databases; memory needs no await.
   #[allow(clippy::unused_async_trait_impl)]
   impl TicketRepository for MemoryRepo {
+    async fn next_number(&self) -> Result<TicketNumber, StoreError> {
+      let stored = u64::try_from(self.0.lock().unwrap().len()).unwrap();
+      Ok(TicketNumber::new(stored + 1))
+    }
+
     async fn create(&self, ticket: &Ticket, _traceparent: Option<&str>) -> Result<(), StoreError> {
       self.0.lock().unwrap().insert(ticket.id(), ticket.clone());
       Ok(())
@@ -128,6 +134,7 @@ mod tests {
   fn summary(t: &Ticket) -> TicketSummary {
     TicketSummary {
       id: t.id(),
+      number: t.number(),
       requester_id: t.requester_id(),
       assignee_id: t.assignee_id(),
       title: t.title().to_owned(),
@@ -218,6 +225,10 @@ mod tests {
 
   #[allow(clippy::unused_async_trait_impl, reason = "losing a race needs no await")]
   impl TicketRepository for LosingRepo {
+    async fn next_number(&self) -> Result<TicketNumber, StoreError> {
+      self.0.next_number().await
+    }
+
     async fn create(&self, ticket: &Ticket, _traceparent: Option<&str>) -> Result<(), StoreError> {
       self.0.create(ticket, None).await
     }

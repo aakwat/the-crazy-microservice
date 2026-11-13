@@ -4,6 +4,7 @@ mod change_ticket;
 mod create_ticket;
 mod get_ticket;
 mod list_tickets;
+mod staff_view;
 mod ticket_page_response;
 mod ticket_response;
 mod ticket_summary_response;

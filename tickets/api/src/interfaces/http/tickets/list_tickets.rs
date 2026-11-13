@@ -25,5 +25,5 @@ pub async fn list_tickets(
 ) -> Result<Json<TicketPageResponse>, Problem> {
   let Query(query) = query.map_err(|rejection| Problem::new(rejection.status(), rejection.body_text()))?;
   let page = state.tickets.list(&who, query.before, query.limit).await?;
-  Ok(Json(page.into()))
+  Ok(Json(TicketPageResponse::for_viewer(page, &who)))
 }

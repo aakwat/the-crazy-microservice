@@ -323,3 +323,32 @@ async fn health_turns_red_when_the_outbox_relay_falls_silent() {
   assert_eq!(alive.status, StatusCode::NO_CONTENT);
   assert_eq!(silent.status, StatusCode::SERVICE_UNAVAILABLE);
 }
+
+#[tokio::test]
+async fn customers_never_see_who_handles_their_ticket() {
+  let api = TestApi::start().await;
+  let (alice, agent) = (Caller::new("customer"), Caller::new("agent"));
+  let created = api
+    .send("POST", "/api/tickets", Some(&alice), Some(printer_on_fire()))
+    .await;
+  let uri = format!("/api/tickets/{}", created.body["id"].as_str().unwrap());
+  api
+    .send("PATCH", &uri, Some(&agent), Some(json!({"assignee_id": agent.id})))
+    .await;
+
+  let alice_reads = api.send("GET", &uri, Some(&alice), None).await;
+  let alice_lists = api.send("GET", "/api/tickets", Some(&alice), None).await;
+  let agent_reads = api.send("GET", &uri, Some(&agent), None).await;
+  let agent_lists = api.send("GET", "/api/tickets", Some(&agent), None).await;
+
+  // `get` tells a missing key from a null one; indexing would return null for both.
+  assert!(created.body.get("assignee_id").is_none());
+  assert!(alice_reads.body.get("assignee_id").is_none());
+  assert!(alice_lists.body["items"][0].get("assignee_id").is_none());
+  assert_eq!(agent_reads.body["assignee_id"], agent.id.to_string());
+  assert!(agent_lists.body["items"][0].get("assignee_id").is_some());
+
+  let reference = created.body["reference"].as_str().unwrap();
+  assert!(reference.starts_with("T-") && reference[2..].parse::<u64>().is_ok());
+  assert_eq!(alice_reads.body["reference"], reference);
+}

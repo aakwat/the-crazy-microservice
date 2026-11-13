@@ -33,10 +33,11 @@ pub(crate) async fn insert(
   Ok(())
 }
 
-/// Ids and status only, never ticket text: consumers fetch details from tickets if they need them.
+/// Ids, reference and status only, never ticket text: consumers fetch details from tickets if they need them.
 fn payload(ticket: &Ticket) -> Value {
   json!({
     "ticket_id": ticket.id().to_string(),
+    "reference": ticket.number().to_string(),
     "status": ticket.status().as_str(),
     "requester_id": ticket.requester_id().to_string(),
     "assignee_id": ticket.assignee_id().map(|id| id.to_string()),

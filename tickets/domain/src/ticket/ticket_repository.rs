@@ -3,11 +3,14 @@
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use super::{Ticket, TicketSummary};
+use super::{Ticket, TicketNumber, TicketSummary};
 use crate::StoreError;
 
 #[allow(async_fn_in_trait)]
 pub trait TicketRepository: Send + Sync {
+  /// The next unused number; gaps are allowed when a ticket is never stored.
+  async fn next_number(&self) -> Result<TicketNumber, StoreError>;
+
   /// Inserts the ticket and its `ticket.created` outbox event in one transaction.
   /// `traceparent` goes into the event, so the change can be followed across services.
   async fn create(&self, ticket: &Ticket, traceparent: Option<&str>) -> Result<(), StoreError>;
