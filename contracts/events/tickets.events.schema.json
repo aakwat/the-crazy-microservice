@@ -16,9 +16,10 @@
     "payload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ticket_id", "status", "requester_id", "assignee_id"],
+      "required": ["ticket_id", "reference", "status", "requester_id", "assignee_id"],
       "properties": {
         "ticket_id": { "type": "string", "format": "uuid" },
+        "reference": { "type": "string", "pattern": "^T-[0-9]+$", "description": "Short number customers quote" },
         "status": { "enum": ["open", "in_progress", "resolved", "closed"] },
         "requester_id": { "type": "string", "format": "uuid" },
         "assignee_id": { "type": ["string", "null"], "format": "uuid" }

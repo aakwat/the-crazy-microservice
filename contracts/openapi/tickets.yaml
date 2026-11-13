@@ -105,11 +105,12 @@ components:
           description: Absent keeps the assignee, null unassigns.
     Ticket:
       type: object
-      required: [id, requester_id, assignee_id, title, body, status, created_at, updated_at]
+      required: [id, reference, requester_id, title, body, status, created_at, updated_at]
       properties:
         id: { type: string, format: uuid }
+        reference: { type: string, pattern: "^T-[0-9]+$", description: Short number customers quote }
         requester_id: { type: string, format: uuid }
-        assignee_id: { type: [string, "null"], format: uuid }
+        assignee_id: { type: [string, "null"], format: uuid, description: Agents only; absent for customers }
         title: { type: string }
         body: { type: string }
         status: { $ref: "#/components/schemas/Status" }
@@ -117,11 +118,12 @@ components:
         updated_at: { type: string, format: date-time }
     TicketSummary:
       type: object
-      required: [id, requester_id, assignee_id, title, status, updated_at]
+      required: [id, reference, requester_id, title, status, updated_at]
       properties:
         id: { type: string, format: uuid }
+        reference: { type: string, pattern: "^T-[0-9]+$" }
         requester_id: { type: string, format: uuid }
-        assignee_id: { type: [string, "null"], format: uuid }
+        assignee_id: { type: [string, "null"], format: uuid, description: Agents only; absent for customers }
         title: { type: string }
         status: { $ref: "#/components/schemas/Status" }
         updated_at: { type: string, format: date-time }
