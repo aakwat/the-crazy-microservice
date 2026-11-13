@@ -1,0 +1,63 @@
+spring:
+  application:
+    name: notifications
+  # Required from the environment; no defaults so a missing secret fails startup instead of using a weak one.
+  datasource:
+    url: ${NOTIFICATIONS_DB_URL}
+    username: ${NOTIFICATIONS_DB_APP_USER}
+    password: ${NOTIFICATIONS_DB_APP_PASSWORD}
+  # Migrations run as the schema owner; the app user can only read and write rows.
+  flyway:
+    user: ${NOTIFICATIONS_DB_MIGRATOR_USER}
+    password: ${NOTIFICATIONS_DB_MIGRATOR_PASSWORD}
+  mail:
+    host: ${NOTIFICATIONS_SMTP_HOST}
+    port: ${NOTIFICATIONS_SMTP_PORT:25}
+    # A hung mail server must not hold the worker: every SMTP step times out (milliseconds).
+    properties:
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
+  security:
+    oauth2:
+      client:
+        registration:
+          auth:
+            provider: auth
+            client-id: ${NOTIFICATIONS_AUTH_CLIENT_ID:notifications}
+            client-secret: ${NOTIFICATIONS_AUTH_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            scope: accounts.read
+        provider:
+          auth:
+            # Set directly, not discovered: discovery would return the public issuer, not the private address.
+            token-uri: ${NOTIFICATIONS_AUTH_TOKEN_URL}
+
+notifications:
+  auth:
+    url: ${NOTIFICATIONS_AUTH_URL}
+  inbox:
+    host: ${NOTIFICATIONS_EVENTS_REDIS_HOST}
+    port: ${NOTIFICATIONS_EVENTS_REDIS_PORT:6379}
+    user: ${NOTIFICATIONS_EVENTS_REDIS_USER}
+    password: ${NOTIFICATIONS_EVENTS_REDIS_PASSWORD}
+    stuck-after: ${NOTIFICATIONS_STUCK_AFTER:60s}
+  mail:
+    from: ${NOTIFICATIONS_MAIL_FROM:notifications@crazy-ms.test}
+  sent-log:
+    retention: ${NOTIFICATIONS_SENT_RETENTION:90d}
+
+# JSON logs with the key-values each event adds (event_id, recipient_id, ...), like the other services.
+logging:
+  structured:
+    format:
+      console: ecs
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState,inbox

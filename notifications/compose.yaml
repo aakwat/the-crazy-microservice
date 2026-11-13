@@ -1,0 +1,142 @@
+# Self-contained plugin: the notifications worker, its own database, and a dev mail server.
+services:
+  notifications:
+    build: .
+    image: crazy-ms/notifications:dev
+    environment:
+      NOTIFICATIONS_DB_URL: jdbc:postgresql://notifications-db:5432/notifications
+      NOTIFICATIONS_DB_APP_USER: notifications_app
+      NOTIFICATIONS_DB_MIGRATOR_USER: notifications_migrator
+      NOTIFICATIONS_SMTP_HOST: mailpit
+      NOTIFICATIONS_SMTP_PORT: "1025"
+      NOTIFICATIONS_AUTH_URL: http://auth:8080
+      NOTIFICATIONS_AUTH_TOKEN_URL: http://auth:8080/oauth2/token
+      NOTIFICATIONS_EVENTS_REDIS_HOST: events-redis
+      NOTIFICATIONS_EVENTS_REDIS_USER: notifications
+      # Each file in /run/secrets becomes a property named after it, so passwords never sit in the environment.
+      SPRING_CONFIG_IMPORT: configtree:/run/secrets/
+    secrets:
+      - NOTIFICATIONS_DB_APP_PASSWORD
+      - NOTIFICATIONS_DB_MIGRATOR_PASSWORD
+      - NOTIFICATIONS_AUTH_CLIENT_SECRET
+      - NOTIFICATIONS_EVENTS_REDIS_PASSWORD
+    depends_on:
+      notifications-db:
+        condition: service_healthy
+    healthcheck:
+      test: [
+        "CMD",
+        "wget",
+        "-q",
+        "--spider",
+        "http://127.0.0.1:8080/actuator/health/liveness",
+      ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 40s
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+          cpus: "0.5"
+    restart: unless-stopped
+    stop_grace_period: 30s
+    # Internal networks only: no internet egress and no published port.
+    networks:
+      - app
+      - events
+      - notifications-data
+      - mail
+
+  notifications-db:
+    image: docker.io/library/postgres:18.6-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
+    environment:
+      POSTGRES_DB: notifications
+      # Bootstrap superuser: only db/init/01-roles.sql and the healthcheck use it; the service never sees it.
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/NOTIFICATIONS_DB_SUPERUSER_PASSWORD
+    secrets:
+      - NOTIFICATIONS_DB_SUPERUSER_PASSWORD
+      - NOTIFICATIONS_DB_MIGRATOR_PASSWORD
+      - NOTIFICATIONS_DB_APP_PASSWORD
+    volumes:
+      - notifications-db-data:/var/lib/postgresql
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d notifications"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
+    cap_drop: [ALL]
+    # Only what the entrypoint needs to fix data-dir ownership and drop from root to the postgres user.
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    security_opt: [no-new-privileges:true]
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    restart: unless-stopped
+    networks:
+      - notifications-data
+
+  # Dev-only mail server: SMTP stays internal; its web UI is the one published port besides the gateway.
+  mailpit:
+    image: docker.io/axllent/mailpit:v1.33.1@sha256:aef2aacc11f075ec0fb6874275ee4a421e688e11a96ebb296134d1735c7761ce
+    user: "65534:65534"
+    ports:
+      - "127.0.0.1:8025:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    restart: unless-stopped
+    networks:
+      - mail
+      - mail-ui
+
+secrets:
+  NOTIFICATIONS_DB_SUPERUSER_PASSWORD:
+    file: ./secrets/NOTIFICATIONS_DB_SUPERUSER_PASSWORD
+  NOTIFICATIONS_DB_MIGRATOR_PASSWORD:
+    file: ./secrets/NOTIFICATIONS_DB_MIGRATOR_PASSWORD
+  NOTIFICATIONS_DB_APP_PASSWORD:
+    file: ./secrets/NOTIFICATIONS_DB_APP_PASSWORD
+  NOTIFICATIONS_AUTH_CLIENT_SECRET:
+    file: ./secrets/NOTIFICATIONS_AUTH_CLIENT_SECRET
+  NOTIFICATIONS_EVENTS_REDIS_PASSWORD:
+    file: ./secrets/NOTIFICATIONS_EVENTS_REDIS_PASSWORD
+
+volumes:
+  notifications-db-data:
+
+networks:
+  app:
+    internal: true
+  events:
+    internal: true
+  notifications-data:
+    internal: true
+  mail:
+    internal: true
+  # Not internal: Docker cannot publish a port from an internal network.
+  mail-ui: {}
