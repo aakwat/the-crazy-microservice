@@ -35,6 +35,33 @@ func TestUnlistedPathsAre404AndNeverReachAuth(t *testing.T) {
 	}
 }
 
+func TestUIPagesReachTheWebAppWithoutASession(t *testing.T) {
+	h, _ := newTestRoutes(t)
+	for _, path := range []string{"/", "/register", "/tickets/new", "/tickets/0190f0e0-0000-7000-8000-000000000000", "/_next/static/app.js", "/favicon.ico"} {
+		rec := serve(h, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK || rec.Body.String() != "web" {
+			t.Errorf("GET %s = %d %q, want the web app", path, rec.Code, rec.Body.String())
+		}
+	}
+	for _, path := range []string{"/", "/register", "/tickets/new", "/tickets/0190f0e0-0000-7000-8000-000000000000"} {
+		rec := serve(h, httptest.NewRequest(http.MethodPost, path, nil))
+		if rec.Code != http.StatusOK || rec.Body.String() != "web" {
+			t.Errorf("POST %s = %d %q, want the web app's server action", path, rec.Code, rec.Body.String())
+		}
+		cross := httptest.NewRequest(http.MethodPost, path, nil)
+		cross.Header.Set("Sec-Fetch-Site", "cross-site")
+		if rec := serve(h, cross); rec.Code != http.StatusForbidden {
+			t.Errorf("cross-site POST %s = %d, want 403", path, rec.Code)
+		}
+	}
+	// Only the listed pages are the UI; anything else stays a 404 and never reaches it.
+	for _, path := range []string{"/tickets", "/admin", "/internal/tickets/1"} {
+		if rec := serve(h, httptest.NewRequest(http.MethodGet, path, nil)); rec.Code != http.StatusNotFound {
+			t.Errorf("GET %s = %d, want 404", path, rec.Code)
+		}
+	}
+}
+
 func TestAPIRoutesNeedASession(t *testing.T) {
 	h, auth := newTestRoutes(t)
 	for _, tc := range []struct{ method, path string }{
@@ -62,7 +89,7 @@ func TestAuthPagesGetNoGatewayCredentialsAndTrustedForwarding(t *testing.T) {
 	h, auth := newTestRoutes(t)
 	forged := "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
 	req := httptest.NewRequest(http.MethodGet, "http://evil.test/login", nil)
-	req.Header.Set("Cookie", "JSESSIONID=abc; __Host-gw-session=secret")
+	req.Header.Set("Cookie", "JSESSIONID=abc; __Host-Http-gw-session=secret")
 	req.Header.Set("Authorization", "Bearer for-the-gateway")
 	req.Header.Set("X-Forwarded-For", "198.51.100.66")
 	req.Header.Set("X-Forwarded-Host", "evil.test")
@@ -208,7 +235,20 @@ func newTestRoutes(t *testing.T) (http.Handler, *authStub) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return routes(b, newProxy(target, public, discard), newProxy(ticketsURL, public, discard)), auth
+	return routes(b, newProxy(target, public, discard), newProxy(ticketsURL, public, discard), newProxy(webStub(t), public, discard)), auth
+}
+
+// webStub answers every request with 200 "web", so a test can tell the UI was reached.
+func webStub(t *testing.T) *url.URL {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("web"))
+	}))
+	t.Cleanup(srv.Close)
+	u, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u
 }
 
 func serve(h http.Handler, req *http.Request) *httptest.ResponseRecorder {

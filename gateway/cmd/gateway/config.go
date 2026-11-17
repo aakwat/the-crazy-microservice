@@ -17,23 +17,31 @@ type config struct {
 	redisAddr     string
 	redisUser     string
 	redisPassword string
-	ticketsURL    string
+	publicURL     *url.URL
+	authURL       *url.URL
+	ticketsURL    *url.URL
+	webURL        *url.URL
 	bff           bff.Config
 }
 
 // loadConfig reads settings from env and secrets from files, never from env, and reports every problem at once.
 func loadConfig(getenv func(string) string) (config, error) {
 	l := &loader{getenv: getenv, secretsDir: cmp.Or(getenv("SECRETS_DIR"), defaultSecretsDir)}
+	publicURL := l.url("GATEWAY_PUBLIC_URL")
+	authURL := l.url("AUTH_INTERNAL_URL")
 	cfg := config{
 		listen:        listenAddr(getenv),
 		redisAddr:     l.required("GATEWAY_REDIS_ADDR"),
 		redisUser:     l.required("GATEWAY_REDIS_USER"),
 		redisPassword: l.secret("GATEWAY_REDIS_PASSWORD"),
+		publicURL:     publicURL,
+		authURL:       authURL,
 		ticketsURL:    l.url("TICKETS_INTERNAL_URL"),
+		webURL:        l.url("WEB_INTERNAL_URL"),
 		bff: bff.Config{
-			PublicURL:       l.url("GATEWAY_PUBLIC_URL"),
-			Issuer:          l.url("AUTH_ISSUER"),
-			AuthURL:         l.url("AUTH_INTERNAL_URL"),
+			PublicURL:       publicURL.String(),
+			Issuer:          l.url("AUTH_ISSUER").String(),
+			AuthURL:         authURL.String(),
 			ClientID:        l.required("GATEWAY_CLIENT_ID"),
 			ClientSecret:    l.secret("GATEWAY_CLIENT_SECRET"),
 			Audience:        audience,
@@ -62,12 +70,17 @@ func (l *loader) required(name string) string {
 	return v
 }
 
-func (l *loader) url(name string) string {
-	v := l.required(name)
-	if u, err := url.Parse(v); v != "" && (err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "") {
+// url parses once here, so a bad URL fails with the other settings and callers never parse again.
+func (l *loader) url(name string) *url.URL {
+	v := strings.TrimSuffix(l.required(name), "/")
+	u, err := url.Parse(v)
+	if v != "" && (err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "") {
 		l.problems = append(l.problems, name+" is not an absolute http(s) URL")
 	}
-	return strings.TrimSuffix(v, "/")
+	if err != nil {
+		return &url.URL{}
+	}
+	return u
 }
 
 // localPath accepts only a path on the gateway's own origin, so a redirect can never point at another site.

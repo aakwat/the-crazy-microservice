@@ -6,7 +6,9 @@ include:
   - events/compose.yaml
   - gateway/compose.yaml
   - notifications/compose.yaml
+  - telemetry/compose.yaml
   - tickets/compose.yaml
+  - web/compose.yaml
 
 services:
   # curl on the private app network, for services that publish no port.

@@ -1,14 +1,7 @@
 package main
 
 import (
-	"context"
-	"crypto/rand"
-	"encoding/hex"
-	"errors"
-	"log/slog"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
 
 	"github.com/aakwat/the-crazy-microservice/gateway/internal/bff"
 )
@@ -27,18 +20,18 @@ var ticketRoutes = []string{
 	"GET /api/tickets/{id}", "PATCH /api/tickets/{id}",
 }
 
+// webRoutes are the browser UI's pages and built assets; each API call it makes is checked on its own route.
+// POST is the UI's server actions, which post to the page they run on; cross-origin protection covers them.
+var webRoutes = []string{
+	"GET /{$}", "GET /register", "GET /tickets/new", "GET /tickets/{id}", "GET /_next/", "GET /favicon.ico",
+	"POST /{$}", "POST /register", "POST /tickets/new", "POST /tickets/{id}",
+}
+
 // accountRoutes are auth's admin API; auth itself admits only the admin role.
 var accountRoutes = []string{"GET /auth/accounts", "PUT /auth/accounts/{id}/role"}
 
-// securityHeaders go on every response; the gateway's values replace any that an upstream sends.
-var securityHeaders = map[string]string{
-	"X-Content-Type-Options": "nosniff",
-	"Referrer-Policy":        "no-referrer",
-	"X-Frame-Options":        "DENY",
-}
-
 // routes returns the gateway's whole public surface; any path not listed, /internal/* included, is a 404.
-func routes(b *bff.BFF, auth, tickets http.Handler) http.Handler {
+func routes(b *bff.BFF, auth, tickets, web http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	// Each login start writes a Redis key, so anonymous callers get a budget.
 	mux.Handle("GET /bff/login", perIP(loginPerMin, http.HandlerFunc(b.Login)))
@@ -65,9 +58,10 @@ func routes(b *bff.BFF, auth, tickets http.Handler) http.Handler {
 		mux.Handle(pattern, admin)
 	}
 
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	})
+	for _, pattern := range webRoutes {
+		mux.Handle(pattern, web)
+	}
+
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		bff.Problem(w, http.StatusNotFound, "")
 	})
@@ -76,75 +70,12 @@ func routes(b *bff.BFF, auth, tickets http.Handler) http.Handler {
 	cop.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		bff.Problem(w, http.StatusForbidden, "cross-origin request refused")
 	}))
-	return edge(cop.Handler(mux))
-}
 
-// edge runs before every route: a fresh trace, baseline security headers and a body cap.
-func edge(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// A client's traceparent is untrusted, so every request starts a new trace.
-		r.Header.Set("Traceparent", newTraceparent())
-		r.Header.Del("Tracestate")
-		for name, value := range securityHeaders {
-			w.Header().Set(name, value)
-		}
-		if r.ContentLength > maxBodyBytes {
-			bff.Problem(w, http.StatusRequestEntityTooLarge, "request body is too large")
-			return
-		}
-		r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
-		next.ServeHTTP(w, r)
+	root := http.NewServeMux()
+	// Outside the edge: the container probe runs every few seconds and would flood the traces.
+	root.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
 	})
-}
-
-// newTraceparent builds a W3C traceparent: version 00, a 16-byte trace id, an 8-byte span id, sampled.
-func newTraceparent() string {
-	var b [24]byte
-	_, _ = rand.Read(b[:])
-	return "00-" + hex.EncodeToString(b[:16]) + "-" + hex.EncodeToString(b[16:]) + "-01"
-}
-
-// newProxy forwards to target without retries; forwarded host and scheme come from config, never the client.
-func newProxy(target, public *url.URL, log *slog.Logger) *httputil.ReverseProxy {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.Proxy = nil
-	transport.ResponseHeaderTimeout = upstreamTimeout
-	return &httputil.ReverseProxy{
-		Rewrite: func(pr *httputil.ProxyRequest) {
-			pr.SetURL(target)
-			pr.SetXForwarded()
-			pr.Out.Header.Set("X-Forwarded-Host", public.Host)
-			pr.Out.Header.Set("X-Forwarded-Proto", public.Scheme)
-		},
-		ModifyResponse: func(res *http.Response) error {
-			for name := range securityHeaders {
-				res.Header.Del(name)
-			}
-			return nil
-		},
-		Transport: transport,
-		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
-			var tooLarge *http.MaxBytesError
-			switch {
-			case errors.As(err, &tooLarge):
-				bff.Problem(w, http.StatusRequestEntityTooLarge, "request body is too large")
-			case errors.Is(err, context.Canceled):
-				// The client hung up, so nobody is left to read an answer.
-			default:
-				log.WarnContext(r.Context(), "upstream failed", "err", err, "traceparent", r.Header.Get("Traceparent"))
-				bff.Problem(w, http.StatusBadGateway, "upstream service is unavailable")
-			}
-		},
-	}
-}
-
-// rewritePath serves the request from path upstream, so the gateway's URL space stays its own.
-func rewritePath(path string, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		u := *r.URL
-		u.Path, u.RawPath = path, ""
-		r2 := r.WithContext(r.Context())
-		r2.URL = &u
-		next.ServeHTTP(w, r2)
-	})
+	root.Handle("/", edge(cop.Handler(mux)))
+	return root
 }

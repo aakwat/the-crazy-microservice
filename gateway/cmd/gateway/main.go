@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -47,20 +46,14 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	authURL, err := url.Parse(cfg.bff.AuthURL)
-	if err != nil {
-		return err
-	}
-	ticketsURL, err := url.Parse(cfg.ticketsURL)
-	if err != nil {
-		return err
-	}
-	publicURL, err := url.Parse(cfg.bff.PublicURL)
-	if err != nil {
-		return err
-	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	shutdownTracing, err := setupTracing(ctx)
+	if err != nil {
+		return fmt.Errorf("setting up tracing: %w", err)
+	}
+	// Runs after the server has drained, so the last requests' spans are still exported.
+	defer func() { _ = shutdownTracing(context.Background()) }()
 
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.redisAddr, Username: cfg.redisUser, Password: cfg.redisPassword})
 	defer rdb.Close()
@@ -68,7 +61,12 @@ func run(log *slog.Logger) error {
 		return fmt.Errorf("connecting to redis: %w", err)
 	}
 	cfg.bff.HTTPClient = authClient()
-	handler := routes(bff.New(ctx, cfg.bff, rdb, log), newProxy(authURL, publicURL, log), newProxy(ticketsURL, publicURL, log))
+	handler := routes(
+		bff.New(ctx, cfg.bff, rdb, log),
+		newProxy(cfg.authURL, cfg.publicURL, log),
+		newProxy(cfg.ticketsURL, cfg.publicURL, log),
+		newProxy(cfg.webURL, cfg.publicURL, log),
+	)
 
 	srv := &http.Server{
 		Addr:              cfg.listen,

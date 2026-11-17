@@ -6,7 +6,7 @@ auth:
         secret: ${AUTH_CLIENT_GATEWAY_SECRET}
         grant-types: [authorization_code, refresh_token]
         redirect-uris: [http://127.0.0.1:8080/bff/callback]
-        post-logout-redirect-uris: [http://127.0.0.1:8080/bff/logged-out]
+        post-logout-redirect-uris: [http://127.0.0.1:8080/bff/logged-out, http://127.0.0.1:8080/]
         scopes: [openid, email]
       - id: jobs
         secret: ${AUTH_CLIENT_JOBS_SECRET}

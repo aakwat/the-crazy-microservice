@@ -7,9 +7,9 @@ import (
 	"time"
 )
 
-// cookiePrefix marks the gateway's cookies; __Host- makes browsers demand Secure, Path=/ and host-only.
+// cookiePrefix marks the gateway's cookies; __Host-Http- makes browsers demand Secure, Path=/, host-only and set by HTTP only.
 const (
-	cookiePrefix  = "__Host-gw-"
+	cookiePrefix  = "__Host-Http-gw-"
 	loginCookie   = cookiePrefix + "login"
 	sessionCookie = cookiePrefix + "session"
 )
@@ -29,7 +29,7 @@ func StripCredentials(next http.Handler) http.Handler {
 	})
 }
 
-// setCookie uses SameSite=Lax because the callback arrives as a top-level redirect from auth.
+// setCookie uses SameSite=Lax, not Strict, so a link from an email or another site still arrives signed in.
 func setCookie(w http.ResponseWriter, name, value string, maxAge time.Duration) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     name,
