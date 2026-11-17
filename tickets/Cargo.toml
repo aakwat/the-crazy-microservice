@@ -17,6 +17,11 @@ streams = { path = "adapters/streams" }
 tower = { version = "0.5", features = ["util"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json"] }
+opentelemetry = { version = "0.33", default-features = false, features = ["trace"] }
+opentelemetry_sdk = { version = "0.33", default-features = false, features = ["trace"] }
+opentelemetry-otlp = { version = "0.33", default-features = false, features = ["http-proto", "reqwest-blocking-client", "trace"] }
+opentelemetry-http = { version = "0.33", default-features = false }
+tracing-opentelemetry = { version = "0.34", default-features = false }
 jsonwebtoken = { version = "11", default-features = false, features = ["rust_crypto", "use_pem"] }
 redis = { version = "1.8", default-features = false, features = ["tokio-comp", "connection-manager", "streams"] }
 reqwest = { version = "0.13", default-features = false, features = ["json"] }

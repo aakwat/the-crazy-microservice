@@ -13,6 +13,8 @@ services:
       AUTH_JWKS_URL: http://auth:8080/oauth2/jwks
       TICKETS_EVENTS_REDIS_HOST: events-redis
       TICKETS_EVENTS_REDIS_USER: tickets
+      OTEL_SERVICE_NAME: tickets
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     secrets:
       - TICKETS_DB_MIGRATOR_PASSWORD
       - TICKETS_DB_APP_PASSWORD
@@ -41,6 +43,7 @@ services:
       - app
       - tickets-data
       - events
+      - telemetry
 
   tickets-db:
     image: docker.io/library/postgres:18.6-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
@@ -96,4 +99,6 @@ networks:
   tickets-data:
     internal: true
   events:
+    internal: true
+  telemetry:
     internal: true

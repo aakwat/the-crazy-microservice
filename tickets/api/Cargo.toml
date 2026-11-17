@@ -13,6 +13,10 @@ application.workspace = true
 axum.workspace = true
 domain.workspace = true
 jwks.workspace = true
+opentelemetry.workspace = true
+opentelemetry_sdk.workspace = true
+opentelemetry-otlp.workspace = true
+opentelemetry-http.workspace = true
 postgres.workspace = true
 reqwest.workspace = true
 serde.workspace = true
@@ -22,6 +26,7 @@ streams.workspace = true
 time.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+tracing-opentelemetry.workspace = true
 tracing-subscriber.workspace = true
 uuid = { workspace = true, features = ["serde"] }
 

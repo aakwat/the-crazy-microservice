@@ -1,5 +1,6 @@
 package com.crazyms.notifications.account.config;
 
+import io.micrometer.observation.ObservationRegistry;
 import java.time.Duration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -42,13 +43,18 @@ class AuthClientConfig {
   }
 
   @Bean
-  RestClient authRestClient(AuthProperties props, OAuth2AuthorizedClientManager manager) {
+  RestClient authRestClient(
+      AuthProperties props,
+      OAuth2AuthorizedClientManager manager,
+      ObservationRegistry observations) {
     var interceptor = new OAuth2ClientHttpRequestInterceptor(manager);
     interceptor.setClientRegistrationIdResolver(request -> REGISTRATION);
     return RestClient.builder()
         .baseUrl(props.url())
         .requestFactory(timeouts())
         .requestInterceptor(interceptor)
+        // Records a client span and sends traceparent, so auth's work joins the event's trace.
+        .observationRegistry(observations)
         .build();
   }
 

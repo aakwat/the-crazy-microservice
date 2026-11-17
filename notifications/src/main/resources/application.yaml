@@ -61,3 +61,13 @@ management:
       group:
         liveness:
           include: livenessState,inbox
+  # The only HTTP callers are health probes; tracing them would bury the event spans.
+  observations:
+    enable:
+      http.server.requests: false
+      spring.security: false
+  # Traces only: there is no metrics backend yet, and the starter would push metrics to localhost.
+  otlp:
+    metrics:
+      export:
+        enabled: false

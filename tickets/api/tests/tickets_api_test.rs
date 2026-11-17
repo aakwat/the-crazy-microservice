@@ -1,7 +1,7 @@
 //! Drives the real router against real Postgres 18 and a mock auth serving the test JWKS.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::sync::Arc;
+use std::sync::{Arc, Once};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use api::config::AUDIENCE;
@@ -46,6 +46,9 @@ struct TestApi {
 
 impl TestApi {
   async fn start() -> Self {
+    // The real logger and tracer, installed once per test binary as main() does.
+    static TELEMETRY: Once = Once::new();
+    TELEMETRY.call_once(|| drop(api::telemetry::init().expect("telemetry")));
     let db = Postgres::default()
       .with_db_name("tickets")
       .with_tag("18-alpine")
@@ -292,7 +295,7 @@ async fn callers_without_a_valid_token_get_the_same_generic_401() {
 }
 
 #[tokio::test]
-async fn writes_carry_the_gateways_traceparent_into_the_outbox() {
+async fn writes_continue_the_gateways_trace_in_the_outbox() {
   let api = TestApi::start().await;
 
   api
@@ -308,7 +311,11 @@ async fn writes_carry_the_gateways_traceparent_into_the_outbox() {
     .fetch_one(&api.pool)
     .await
     .unwrap();
-  assert_eq!(traceparent.as_deref(), Some(TRACE));
+  // Same trace as the gateway's, but this service's own span, so consumers hang under tickets.
+  let fields: Vec<String> = traceparent.unwrap().split('-').map(str::to_owned).collect();
+  let gateway: Vec<&str> = TRACE.split('-').collect();
+  assert_eq!(fields[1], gateway[1], "trace id");
+  assert_ne!(fields[2], gateway[2], "span id");
 }
 
 #[tokio::test]

@@ -13,6 +13,7 @@ services:
       NOTIFICATIONS_AUTH_TOKEN_URL: http://auth:8080/oauth2/token
       NOTIFICATIONS_EVENTS_REDIS_HOST: events-redis
       NOTIFICATIONS_EVENTS_REDIS_USER: notifications
+      MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT: http://jaeger:4318/v1/traces
       # Each file in /run/secrets becomes a property named after it, so passwords never sit in the environment.
       SPRING_CONFIG_IMPORT: configtree:/run/secrets/
     secrets:
@@ -53,6 +54,7 @@ services:
       - events
       - notifications-data
       - mail
+      - telemetry
 
   notifications-db:
     image: docker.io/library/postgres:18.6-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
@@ -137,6 +139,8 @@ networks:
   notifications-data:
     internal: true
   mail:
+    internal: true
+  telemetry:
     internal: true
   # Not internal: Docker cannot publish a port from an internal network.
   mail-ui: {}

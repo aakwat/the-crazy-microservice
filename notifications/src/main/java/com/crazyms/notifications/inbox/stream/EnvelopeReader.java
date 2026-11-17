@@ -21,8 +21,12 @@ class EnvelopeReader {
     this.json = json;
   }
 
-  TicketEvent read(String envelope) {
+  Envelope read(String envelope) {
     var root = parse(envelope);
+    return new Envelope(event(root), nullableText(root, "traceparent"));
+  }
+
+  private static TicketEvent event(JsonNode root) {
     var version = root.path("version");
     if (!version.isIntegralNumber() || version.intValue() != VERSION) {
       throw new UnreadableEnvelopeException("unsupported version");
@@ -67,6 +71,11 @@ class EnvelopeReader {
     } catch (IllegalArgumentException e) {
       throw new UnreadableEnvelopeException("bad " + field);
     }
+  }
+
+  private static String nullableText(JsonNode node, String field) {
+    var value = node.path(field);
+    return value.isString() ? value.stringValue() : null;
   }
 
   private static UUID nullableUuid(JsonNode node, String field) {

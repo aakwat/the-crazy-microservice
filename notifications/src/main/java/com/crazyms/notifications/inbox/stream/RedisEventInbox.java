@@ -104,7 +104,9 @@ class RedisEventInbox implements EventInbox {
       var envelope = entry.getBody().get(ENVELOPE_FIELD);
       long count = deliveries.applyAsLong(entry.getId());
       try {
-        messages.add(new InboxMessage(entry.getId(), count, envelope, reader.read(envelope)));
+        var read = reader.read(envelope);
+        messages.add(
+            new InboxMessage(entry.getId(), count, envelope, read.event(), read.traceparent()));
       } catch (UnreadableEnvelopeException e) {
         moveToDeadLetters(entry.getId(), envelope, count, e.getMessage());
       }

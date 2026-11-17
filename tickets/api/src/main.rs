@@ -32,14 +32,23 @@ async fn main() -> ExitCode {
   if std::env::args().nth(1).as_deref() == Some("healthcheck") {
     return healthcheck().await;
   }
-  tracing_subscriber::fmt().json().init();
-  match run().await {
+  let tracer = match api::telemetry::init() {
+    Ok(tracer) => tracer,
+    Err(error) => {
+      eprintln!("telemetry setup failed: {error}");
+      return ExitCode::FAILURE;
+    }
+  };
+  let code = match run().await {
     Ok(()) => ExitCode::SUCCESS,
     Err(error) => {
       tracing::error!(event = "server.stopped", %error);
       ExitCode::FAILURE
     }
-  }
+  };
+  // After the relay has drained, so its last spans still leave before the container stops.
+  let _ = tracer.shutdown();
+  code
 }
 
 async fn run() -> Result<(), Box<dyn Error>> {
