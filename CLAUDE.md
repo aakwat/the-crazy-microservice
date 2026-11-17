@@ -21,6 +21,7 @@ stateless so it can run as several replicas.
 | jobs          | Python | scheduled work: SLA escalation, auto-close               |
 | ai            | Python | auto-triage of new tickets via a local model (Ollama)    |
 | notifications | Java   | emails requester and assignee on ticket events; sent log |
+| web           | TS     | browser UI (Next.js); no session, no tokens              |
 
 Build order, one scope at a time: auth, gateway, tickets, outbox relay,
 notifications, realtime, image, jobs, ai, k8s.
@@ -93,6 +94,12 @@ DNS (compose / k8s Service names). No gRPC.
 **Other invariants.**
 
 - `traceparent` on every HTTP call and in every envelope.
+- Tracing is OpenTelemetry over OTLP HTTP to the `telemetry/` plugin (Jaeger). The
+  gateway starts every trace and ignores the client's; services continue
+  `traceparent`; tickets stores its own span's in the outbox; consumers continue
+  the envelope's. Spans carry ids, routes and statuses only: never ticket text,
+  emails, client IPs, headers or query strings. No `OTEL_EXPORTER_OTLP_ENDPOINT`
+  means spans are recorded but not exported.
 - Image decoding treats input as hostile: check dimensions with
   `image.DecodeConfig` before decoding.
 - AI output is untrusted (ticket text can carry prompt injection). It may only
@@ -111,7 +118,8 @@ may reference another plugin's internals.
 ### Inbound / outbound (compose networks now, NetworkPolicy later)
 
 All networks are `internal: true` (no internet egress); only the gateway
-publishes a port, plus the dev-only Mailpit UI on `127.0.0.1:8025`. Secrets are
+publishes a port, plus the dev-only Mailpit UI on `127.0.0.1:8025` and Jaeger UI on
+`127.0.0.1:16686`. Secrets are
 files under `/run/secrets`, never env vars (Spring reads them via
 `SPRING_CONFIG_IMPORT=configtree:/run/secrets/`, Postgres via `*_FILE`).
 
@@ -119,14 +127,16 @@ files under `/run/secrets`, never env vars (Spring reads them via
 | ---------------- | ---------------------------------------------------------- | --------------------------------------------------------- |
 | auth             | `app` network (8080)                                       | auth-db                                                   |
 | auth-db          | auth only                                                  | none                                                      |
-| gateway          | host `127.0.0.1:8080` (`edge`)                             | auth, tickets, gateway-redis                              |
+| gateway          | host `127.0.0.1:8080` (`edge`)                             | auth, tickets, web, gateway-redis, jaeger                 |
 | gateway-redis    | gateway only                                               | none                                                      |
-| tickets          | `app` network (8080)                                       | tickets-db, auth JWKS, events-redis                       |
+| tickets          | `app` network (8080)                                       | tickets-db, auth JWKS, events-redis, jaeger               |
 | tickets-db       | tickets only                                               | none                                                      |
 | events-redis     | `events` network (ACL per service)                         | none                                                      |
-| notifications    | none (no API; health probes only)                          | auth `/internal`, events-redis, notifications-db, mailpit |
+| notifications    | none (no API; health probes only)                          | auth `/internal`, events-redis, notifications-db, mailpit, jaeger |
 | notifications-db | notifications only                                         | none                                                      |
 | mailpit          | notifications (SMTP); host `127.0.0.1:8025` (UI, dev only) | none                                                      |
+| web              | gateway only (pages, assets, server actions)               | gateway (with the browser's gateway cookie)               |
+| jaeger           | `telemetry` network (OTLP 4318); host `127.0.0.1:16686` (UI, dev only) | none                                          |
 | client           | none (tools profile)                                       | `app`                                                     |
 
 Browsers reach auth only through the gateway, which proxies its login pages on
