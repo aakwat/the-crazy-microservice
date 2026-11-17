@@ -20,7 +20,7 @@ paths:
         "201":
           description: Created
           headers:
-            Location: { schema: { type: string }, description: /api/tickets/{id} }
+            Location: { schema: { type: string }, description: "/api/tickets/{id}" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Ticket" }
