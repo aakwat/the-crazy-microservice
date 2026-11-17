@@ -1,0 +1,31 @@
+# Self-contained plugin: a trace backend and UI. Services send OTLP here; nothing here calls out.
+services:
+  jaeger:
+    image: docker.io/jaegertracing/jaeger:2.23.0@sha256:1d157a0fa25fb0e1588427522031bce7aad80152800df62772511b8b4916140e
+    # Dev only: traces live in memory and vanish on restart.
+    ports:
+      - "127.0.0.1:16686:16686"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:13133/status"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    restart: unless-stopped
+    networks:
+      - telemetry
+      - telemetry-ui
+
+networks:
+  telemetry:
+    internal: true
+  # Not internal: Docker cannot publish a port from an internal network.
+  telemetry-ui: {}
