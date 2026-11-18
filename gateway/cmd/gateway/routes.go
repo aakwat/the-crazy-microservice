@@ -18,6 +18,8 @@ var authPages = []string{
 var ticketRoutes = []string{
 	"POST /api/tickets", "GET /api/tickets",
 	"GET /api/tickets/{id}", "PATCH /api/tickets/{id}",
+	"GET /api/tickets/{id}/messages", "POST /api/tickets/{id}/messages",
+	"POST /api/tickets/{id}/confirm", "POST /api/tickets/{id}/withdraw",
 }
 
 // webRoutes are the browser UI's pages and built assets; each API call it makes is checked on its own route.

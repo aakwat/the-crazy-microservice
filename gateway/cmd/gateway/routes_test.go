@@ -64,11 +64,16 @@ func TestUIPagesReachTheWebAppWithoutASession(t *testing.T) {
 
 func TestAPIRoutesNeedASession(t *testing.T) {
 	h, auth := newTestRoutes(t)
+
 	for _, tc := range []struct{ method, path string }{
 		{http.MethodGet, "/api/tickets"},
 		{http.MethodPost, "/api/tickets"},
 		{http.MethodGet, "/api/tickets/0190f0e0-0000-7000-8000-000000000000"},
 		{http.MethodPatch, "/api/tickets/0190f0e0-0000-7000-8000-000000000000"},
+		{http.MethodGet, "/api/tickets/0190f0e0-0000-7000-8000-000000000000/messages"},
+		{http.MethodPost, "/api/tickets/0190f0e0-0000-7000-8000-000000000000/messages"},
+		{http.MethodPost, "/api/tickets/0190f0e0-0000-7000-8000-000000000000/confirm"},
+		{http.MethodPost, "/api/tickets/0190f0e0-0000-7000-8000-000000000000/withdraw"},
 		{http.MethodGet, "/auth/accounts?email=a@example.com"},
 		{http.MethodPut, "/auth/accounts/0190f0e0-0000-7000-8000-000000000000/role"},
 	} {
@@ -77,9 +82,17 @@ func TestAPIRoutesNeedASession(t *testing.T) {
 			t.Errorf("%s %s without a session = %d, want 401 with WWW-Authenticate", tc.method, tc.path, rec.Code)
 		}
 	}
-	if rec := serve(h, httptest.NewRequest(http.MethodDelete, "/api/tickets/1", nil)); rec.Code != http.StatusNotFound {
-		t.Errorf("DELETE /api/tickets/1 = %d, want 404 for an unlisted method", rec.Code)
+
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodDelete, "/api/tickets/1"},
+		{http.MethodGet, "/api/tickets/1/confirm"},
+		{http.MethodDelete, "/api/tickets/1/messages"},
+	} {
+		if rec := serve(h, httptest.NewRequest(tc.method, tc.path, nil)); rec.Code != http.StatusNotFound {
+			t.Errorf("%s %s = %d, want 404 for an unlisted method", tc.method, tc.path, rec.Code)
+		}
 	}
+
 	if got := len(auth.all()); got != 0 {
 		t.Errorf("auth received %d requests without a session, want 0", got)
 	}
