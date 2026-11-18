@@ -1,6 +1,8 @@
 //! `TicketService` — every ticket use case on behalf of a principal: who may do what.
 
-use domain::{AssigneeChange, Message, Principal, Ticket, TicketEvent, TicketRepository, TicketStatus, Visibility};
+use domain::{
+  AssigneeChange, Message, Principal, Ticket, TicketError, TicketEvent, TicketRepository, TicketStatus, Visibility,
+};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -38,15 +40,16 @@ impl<R: TicketRepository> TicketService<R> {
 
   /// Someone else's ticket looks missing, so its existence never leaks.
   pub async fn get(&self, who: &Principal, id: Uuid) -> Result<Ticket, AppError> {
-    let ticket = self.repo.find(id).await?.ok_or(AppError::NotFound)?;
-    if !who.is_agent() && ticket.requester_id() != who.subject() {
-      return Err(AppError::NotFound);
-    }
-    Ok(ticket)
+    self
+      .repo
+      .find(id)
+      .await?
+      .filter(|ticket| who.is_agent() || ticket.requester_id() == who.subject())
+      .ok_or(AppError::NotFound)
   }
 
   pub async fn list(&self, who: &Principal, before: Option<Uuid>, limit: Option<u32>) -> Result<TicketPage, AppError> {
-    let requester = if who.is_agent() { None } else { Some(who.subject()) };
+    let requester = (!who.is_agent()).then_some(who.subject());
     let size = TicketPage::size(limit);
     let items = self.repo.list(requester, before, size).await?;
     Ok(TicketPage::new(items, size))
@@ -65,25 +68,25 @@ impl<R: TicketRepository> TicketService<R> {
     now: OffsetDateTime,
     traceparent: Option<&str>,
   ) -> Result<Message, AppError> {
-    let mut ticket = self.get(who, id).await?;
-    let read_at = ticket.updated_at();
-    let events = if who.is_agent() {
+    let ticket = self.get(who, id).await?;
+    let me = who.subject();
+
+    let (_, events) = if who.is_agent() {
       // Only the assignee resolves or asks the customer for something; any agent may answer.
-      if reply.then.is_some() && ticket.assignee_id() != Some(who.subject()) {
-        return Err(AppError::Forbidden);
-      }
-      let visibility = if reply.internal {
-        Visibility::Internal
-      } else {
-        Visibility::Public
-      };
-      ticket.staff_reply(who.subject(), reply.body, visibility, reply.then, now)?
-    } else if reply.internal || reply.then.is_some() {
-      return Err(AppError::Forbidden);
+      allow(reply.then.is_none() || ticket.assignee_id() == Some(me))?;
+      let visibility = reply.visibility();
+      self
+        .apply(ticket, traceparent, |t| {
+          t.staff_reply(me, reply.body, visibility, reply.then, now)
+        })
+        .await?
     } else {
-      ticket.customer_reply(who.subject(), reply.body, now)?
+      allow(!reply.internal && reply.then.is_none())?;
+      self
+        .apply(ticket, traceparent, |t| t.customer_reply(me, reply.body, now))
+        .await?
     };
-    self.save(&ticket, read_at, &events, traceparent).await?;
+
     Ok(added_message(&events))
   }
 
@@ -94,10 +97,8 @@ impl<R: TicketRepository> TicketService<R> {
     now: OffsetDateTime,
     traceparent: Option<&str>,
   ) -> Result<Ticket, AppError> {
-    let mut ticket = self.requesters_ticket(who, id).await?;
-    let read_at = ticket.updated_at();
-    let events = ticket.confirm(now)?;
-    self.save(&ticket, read_at, &events, traceparent).await?;
+    let ticket = self.requesters_ticket(who, id).await?;
+    let (ticket, _) = self.apply(ticket, traceparent, |t| t.confirm(now)).await?;
     Ok(ticket)
   }
 
@@ -108,10 +109,8 @@ impl<R: TicketRepository> TicketService<R> {
     now: OffsetDateTime,
     traceparent: Option<&str>,
   ) -> Result<Ticket, AppError> {
-    let mut ticket = self.requesters_ticket(who, id).await?;
-    let read_at = ticket.updated_at();
-    let events = ticket.withdraw(now)?;
-    self.save(&ticket, read_at, &events, traceparent).await?;
+    let ticket = self.requesters_ticket(who, id).await?;
+    let (ticket, _) = self.apply(ticket, traceparent, |t| t.withdraw(now)).await?;
     Ok(ticket)
   }
 
@@ -123,41 +122,49 @@ impl<R: TicketRepository> TicketService<R> {
     now: OffsetDateTime,
     traceparent: Option<&str>,
   ) -> Result<Ticket, AppError> {
-    if !who.is_agent() {
-      return Err(AppError::Forbidden);
-    }
-    let mut ticket = self.get(who, id).await?;
-    if !may_assign(who.subject(), ticket.assignee_id(), change) {
-      return Err(AppError::Forbidden);
-    }
-    let read_at = ticket.updated_at();
-    let events = ticket.assign(change, now)?;
-    self.save(&ticket, read_at, &events, traceparent).await?;
+    allow(who.is_agent())?;
+    let ticket = self.get(who, id).await?;
+    allow(may_assign(who.subject(), ticket.assignee_id(), change))?;
+
+    let (ticket, _) = self.apply(ticket, traceparent, |t| t.assign(change, now)).await?;
     Ok(ticket)
   }
 
   /// Confirm and withdraw are the customer's decisions; staff resolve instead.
   async fn requesters_ticket(&self, who: &Principal, id: Uuid) -> Result<Ticket, AppError> {
     let ticket = self.get(who, id).await?;
-    if who.is_agent() {
-      return Err(AppError::Forbidden);
-    }
+    allow(!who.is_agent())?;
     Ok(ticket)
   }
 
-  /// A change made on an outdated read is refused, never silently overwritten.
-  async fn save(
+  /// Runs one domain action and stores it; a change made on an outdated read is refused, never overwritten.
+  async fn apply(
     &self,
-    ticket: &Ticket,
-    read_at: OffsetDateTime,
-    events: &[TicketEvent],
+    mut ticket: Ticket,
     traceparent: Option<&str>,
-  ) -> Result<(), AppError> {
-    if !events.is_empty() && !self.repo.save(ticket, read_at, events, traceparent).await? {
-      return Err(AppError::Conflict);
-    }
-    Ok(())
+    action: impl FnOnce(&mut Ticket) -> Result<Vec<TicketEvent>, TicketError>,
+  ) -> Result<(Ticket, Vec<TicketEvent>), AppError> {
+    let read_at = ticket.updated_at();
+    let events = action(&mut ticket)?;
+
+    let saved = events.is_empty() || self.repo.save(&ticket, read_at, &events, traceparent).await?;
+    saved.then_some((ticket, events)).ok_or(AppError::Conflict)
   }
+}
+
+impl Reply<'_> {
+  fn visibility(&self) -> Visibility {
+    if self.internal {
+      Visibility::Internal
+    } else {
+      Visibility::Public
+    }
+  }
+}
+
+/// Each role rule reads as one line: `allow(rule)?`.
+fn allow(rule: bool) -> Result<(), AppError> {
+  rule.then_some(()).ok_or(AppError::Forbidden)
 }
 
 /// An agent takes a free ticket or lets go of their own; reassigning a colleague's is for an Admin.

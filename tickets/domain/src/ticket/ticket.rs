@@ -90,39 +90,18 @@ impl Ticket {
     now: OffsetDateTime,
   ) -> Result<Vec<TicketEvent>, TicketError> {
     self.ensure_not_closed()?;
-    if visibility == Visibility::Internal && then.is_some() {
-      return Err(TicketError::NoteWithStatus);
+    match visibility {
+      Visibility::Public => self.public_reply(author_id, body, then, now),
+      Visibility::Internal => self.note(author_id, body, then, now),
     }
-    let target = match visibility {
-      Visibility::Public => self.after_staff_reply(then)?,
-      Visibility::Internal => None,
-    };
-    let message = Message::write(self.id, author_id, Author::Staff, visibility, body, now)?;
-    let mut events = vec![TicketEvent::MessageAdded(message)];
-    if let Some(status) = target {
-      self.move_to(status, &mut events);
-    }
-    // A note leaves the ticket untouched, so customers cannot see one was written.
-    if visibility == Visibility::Public {
-      self.touch(now);
-    }
-    Ok(events)
   }
 
   pub fn confirm(&mut self, now: OffsetDateTime) -> Result<Vec<TicketEvent>, TicketError> {
-    self.ensure_not_closed()?;
-    if self.status != TicketStatus::Resolved {
-      return Err(self.cannot_move_to(TicketStatus::Closed));
-    }
-    Ok(self.close(CloseReason::Confirmed, now))
+    self.close(CloseReason::Confirmed, now)
   }
 
   pub fn withdraw(&mut self, now: OffsetDateTime) -> Result<Vec<TicketEvent>, TicketError> {
-    self.ensure_not_closed()?;
-    if self.status == TicketStatus::Resolved {
-      return Err(self.cannot_move_to(TicketStatus::Closed));
-    }
-    Ok(self.close(CloseReason::Withdrawn, now))
+    self.close(CloseReason::Withdrawn, now)
   }
 
   pub fn assign(&mut self, change: AssigneeChange, now: OffsetDateTime) -> Result<Vec<TicketEvent>, TicketError> {
@@ -136,23 +115,66 @@ impl Ticket {
     Ok(vec![TicketEvent::Assigned])
   }
 
-  /// The status a public staff reply leads to, or `None` to keep it.
-  fn after_staff_reply(&self, then: Option<TicketStatus>) -> Result<Option<TicketStatus>, TicketError> {
+  fn public_reply(
+    &mut self,
+    author_id: Uuid,
+    body: &str,
+    then: Option<TicketStatus>,
+    now: OffsetDateTime,
+  ) -> Result<Vec<TicketEvent>, TicketError> {
+    let target = self.after_staff_reply(then)?;
+    let message = Message::write(self.id, author_id, Author::Staff, Visibility::Public, body, now)?;
+
+    let mut events = vec![TicketEvent::MessageAdded(message)];
+    self.move_to(target, &mut events);
+    self.touch(now);
+    Ok(events)
+  }
+
+  /// A note leaves the ticket untouched, so customers cannot see one was written.
+  fn note(
+    &self,
+    author_id: Uuid,
+    body: &str,
+    then: Option<TicketStatus>,
+    now: OffsetDateTime,
+  ) -> Result<Vec<TicketEvent>, TicketError> {
+    if then.is_some() {
+      return Err(TicketError::NoteWithStatus);
+    }
+    let message = Message::write(self.id, author_id, Author::Staff, Visibility::Internal, body, now)?;
+    Ok(vec![TicketEvent::MessageAdded(message)])
+  }
+
+  /// The status a public staff reply leads to; the current one when it stays.
+  fn after_staff_reply(&self, then: Option<TicketStatus>) -> Result<TicketStatus, TicketError> {
     use TicketStatus::{New, Open, Pending, Resolved};
     match (self.status, then) {
-      (New, None) => Ok(Some(Open)),
-      (_, None) | (Pending, Some(Pending)) | (Resolved, Some(Resolved)) => Ok(None),
-      (New | Open, Some(Pending)) | (New | Open | Pending, Some(Resolved)) => Ok(then),
+      (New, None) => Ok(Open),
+      (current, None) => Ok(current),
+      (New | Open | Pending, Some(to @ Pending)) | (New | Open | Pending | Resolved, Some(to @ Resolved)) => Ok(to),
       (_, Some(to)) => Err(self.cannot_move_to(to)),
     }
   }
 
-  fn close(&mut self, reason: CloseReason, now: OffsetDateTime) -> Vec<TicketEvent> {
+  fn close(&mut self, reason: CloseReason, now: OffsetDateTime) -> Result<Vec<TicketEvent>, TicketError> {
+    self.ensure_can_close(reason)?;
+
     let mut events = Vec::new();
     self.close_reason = Some(reason);
     self.move_to(TicketStatus::Closed, &mut events);
     self.touch(now);
-    events
+    Ok(events)
+  }
+
+  /// Confirming needs a resolution; withdrawing is only for a ticket not yet resolved.
+  fn ensure_can_close(&self, reason: CloseReason) -> Result<(), TicketError> {
+    use TicketStatus::{Closed, New, Open, Pending, Resolved};
+    match (self.status, reason) {
+      (Closed, _) => Err(TicketError::Closed),
+      (Resolved, CloseReason::Confirmed) | (New | Open | Pending, CloseReason::Withdrawn) => Ok(()),
+      _ => Err(self.cannot_move_to(Closed)),
+    }
   }
 
   fn move_to(&mut self, status: TicketStatus, events: &mut Vec<TicketEvent>) {
