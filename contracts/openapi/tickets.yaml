@@ -55,12 +55,14 @@ paths:
         "401": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
     patch:
-      summary: Agents only; move the status one step or (un)assign
+      summary: >-
+        Agents only; take a free ticket (assignee_id = yourself) or let go of your own (null).
+        Status moves only through messages, confirm and withdraw.
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/ChangeTicket" }
+            schema: { $ref: "#/components/schemas/AssignTicket" }
       responses:
         "200":
           description: The changed ticket
@@ -68,6 +70,71 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Ticket" }
         "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /api/tickets/{id}/messages:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: The conversation, oldest first; customers see public messages only
+      responses:
+        "200":
+          description: Every message the caller may see
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessageList" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+    post:
+      summary: >-
+        Reply. A customer reply reopens a pending or resolved ticket; a staff public reply starts work
+        on a new one, and `then` asks the customer for something (pending) or resolves.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PostMessage" }
+      responses:
+        "201":
+          description: Added
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+  /api/tickets/{id}/confirm:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: The requester confirms a resolved ticket; it closes
+      responses:
+        "200":
+          description: The closed ticket
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ticket" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+  /api/tickets/{id}/withdraw:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: The requester withdraws a new, open or pending ticket; it closes
+      responses:
+        "200":
+          description: The closed ticket
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ticket" }
         "401": { $ref: "#/components/responses/Problem" }
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
@@ -85,8 +152,12 @@ components:
   schemas:
     Status:
       type: string
-      enum: [open, in_progress, resolved, closed]
-      description: Moves one step forward only; closed is final.
+      enum: [new, open, pending, resolved, closed]
+      description: docs/business-rules.md 13.1; closed is final.
+    CloseReason:
+      type: [string, "null"]
+      enum: [confirmed, withdrawn, null]
+      description: Set exactly when the status is closed.
     CreateTicket:
       type: object
       additionalProperties: false
@@ -94,18 +165,47 @@ components:
       properties:
         title: { type: string, minLength: 1, maxLength: 200 }
         body: { type: string, minLength: 1, maxLength: 10000 }
-    ChangeTicket:
+    AssignTicket:
       type: object
       additionalProperties: false
+      required: [assignee_id]
       properties:
-        status: { $ref: "#/components/schemas/Status" }
         assignee_id:
           type: [string, "null"]
           format: uuid
-          description: Absent keeps the assignee, null unassigns.
+          description: null unassigns.
+    PostMessage:
+      type: object
+      additionalProperties: false
+      required: [body]
+      properties:
+        body: { type: string, minLength: 1, maxLength: 10000 }
+        internal: { type: boolean, default: false, description: Staff only; a note customers never see }
+        then:
+          type: string
+          enum: [pending, resolved]
+          description: The assignee only, with a public reply; ask the customer for something or resolve.
+    Message:
+      type: object
+      required: [id, from, body, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        from:
+          type: string
+          enum: [customer, support]
+          description: Staff replies are signed by the company, never by a person.
+        body: { type: string }
+        created_at: { type: string, format: date-time }
+        internal: { type: boolean, description: Agents only; absent for customers }
+        author_id: { type: string, format: uuid, description: Agents only; absent for customers }
+    MessageList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Message" } }
     Ticket:
       type: object
-      required: [id, reference, requester_id, title, body, status, created_at, updated_at]
+      required: [id, reference, requester_id, title, body, status, close_reason, created_at, updated_at]
       properties:
         id: { type: string, format: uuid }
         reference: { type: string, pattern: "^T-[0-9]+$", description: Short number customers quote }
@@ -114,6 +214,8 @@ components:
         title: { type: string }
         body: { type: string }
         status: { $ref: "#/components/schemas/Status" }
+        close_reason: { $ref: "#/components/schemas/CloseReason" }
+        reopen_count: { type: integer, minimum: 0, description: Agents only; absent for customers }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     TicketSummary:

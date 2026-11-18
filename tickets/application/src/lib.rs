@@ -4,4 +4,4 @@ mod outbox;
 mod ticket;
 
 pub use outbox::{OutboxRelay, OutboxRetention, RelayError};
-pub use ticket::{AppError, TicketPage, TicketService};
+pub use ticket::{AppError, Reply, TicketPage, TicketService};

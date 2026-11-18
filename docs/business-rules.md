@@ -820,9 +820,9 @@ The PoC already matches the three roles and the thin-event, no-addresses-in-logs
 | Gap                                                                               | Rules                  |
 | --------------------------------------------------------------------------------- | ---------------------- |
 | ~~The tickets API returns `assignee_id` to customers.~~ Closed in scope 6.        | P1, TICKET-007, INV-03 |
-| Statuses are open, in_progress, resolved, closed: no New, no Pending (SLA pause). | 13.1                   |
+| ~~No New or Pending statuses (SLA pause).~~ Closed in scope 7.                    | 13.1                   |
 | ~~UUIDs only, no short reference.~~ Closed in scope 6 (`T-1042`).                 | TICKET-002             |
-| No categories, teams, priorities, messages, internal notes or SLA yet.            | Sections 5–9           |
+| No categories, teams, priorities or SLA yet; messages and notes added in scope 7. | Sections 5–9           |
 | Assignment is manual; no round-robin or queue.                                    | Section 6              |
 | Ticket permissions use the role in the access token, up to 15 minutes old.        | ROLE-006               |
 

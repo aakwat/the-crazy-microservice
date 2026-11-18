@@ -1,4 +1,4 @@
-//! `TicketNumber` — the short number customers quote, shown as `T-1042` (docs/business-rules.md, TICKET-002).
+//! `TicketNumber` — the short number customers quote, shown as `T-1042`.
 
 use std::fmt;
 

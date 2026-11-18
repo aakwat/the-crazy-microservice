@@ -47,12 +47,12 @@ fn event(status: &str) -> OutboxEvent {
   OutboxEvent {
     id: Uuid::now_v7(),
     stream: "tickets.events".to_owned(),
-    event_type: "ticket.changed".to_owned(),
-    version: 1,
+    event_type: "ticket.status_changed".to_owned(),
+    version: 2,
     subject_id: ticket,
     traceparent: Some("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01".to_owned()),
     payload: format!(
-      r#"{{"ticket_id":"{ticket}","reference":"T-1","status":"{status}","requester_id":"{}","assignee_id":null}}"#,
+      r#"{{"ticket_id":"{ticket}","reference":"T-1","status":"{status}","close_reason":null,"requester_id":"{}","assignee_id":null,"message":null}}"#,
       Uuid::now_v7()
     ),
     occurred_at: datetime!(2026-11-12 09:00:00.123456 UTC),

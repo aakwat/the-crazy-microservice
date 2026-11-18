@@ -3,7 +3,7 @@
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use super::{Ticket, TicketNumber, TicketSummary};
+use super::{Message, Ticket, TicketEvent, TicketNumber, TicketSummary};
 use crate::StoreError;
 
 #[allow(async_fn_in_trait)]
@@ -15,16 +15,19 @@ pub trait TicketRepository: Send + Sync {
   /// `traceparent` goes into the event, so the change can be followed across services.
   async fn create(&self, ticket: &Ticket, traceparent: Option<&str>) -> Result<(), StoreError>;
 
-  /// Writes the change and its `ticket.changed` outbox event in one transaction;
-  /// `false` when the stored ticket no longer has `expected_updated_at` (someone else changed it).
-  async fn update(
+  /// `false` when someone else changed the ticket after `expected_updated_at`, so nothing is overwritten.
+  async fn save(
     &self,
     ticket: &Ticket,
     expected_updated_at: OffsetDateTime,
+    events: &[TicketEvent],
     traceparent: Option<&str>,
   ) -> Result<bool, StoreError>;
 
   async fn find(&self, id: Uuid) -> Result<Option<Ticket>, StoreError>;
+
+  /// Filters notes in SQL, so a customer's request never even loads one.
+  async fn messages(&self, ticket_id: Uuid, include_internal: bool) -> Result<Vec<Message>, StoreError>;
 
   /// Newest first; `requester` limits to one requester, `before` continues after that ticket id.
   async fn list(

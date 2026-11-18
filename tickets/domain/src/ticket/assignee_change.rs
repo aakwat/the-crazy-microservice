@@ -2,19 +2,16 @@
 
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssigneeChange {
-  #[default]
-  Keep,
   Assign(Uuid),
   Unassign,
 }
 
 impl AssigneeChange {
-  /// The assignee after this change, given the current one.
-  pub fn applied_to(self, current: Option<Uuid>) -> Option<Uuid> {
+  /// The assignee after this change.
+  pub fn assignee(self) -> Option<Uuid> {
     match self {
-      Self::Keep => current,
       Self::Assign(id) => Some(id),
       Self::Unassign => None,
     }

@@ -1,16 +1,19 @@
-//! `Ticket` — a support ticket and the rules for changing it.
+//! `Ticket` — a support ticket and its lifecycle (docs/business-rules.md 13.2).
 
-use time::OffsetDateTime;
+use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
-use super::{TicketChange, TicketError, TicketNumber, TicketStatus};
+use super::stored::{fits, stored_precision};
+use super::{
+  AssigneeChange, Author, CloseReason, Message, TicketError, TicketEvent, TicketNumber, TicketStatus, Visibility,
+};
 
 /// Longest title in characters; the database enforces the same limit.
 pub const MAX_TITLE_CHARS: usize = 200;
 /// Longest body in characters; the database enforces the same limit.
 pub const MAX_BODY_CHARS: usize = 10_000;
 
-/// A support ticket; create it with [`Ticket::open`] and change it only through [`Ticket::apply`].
+/// Changed only through its actions, so every change arrives with the events the outbox needs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ticket {
   id: Uuid,
@@ -20,12 +23,14 @@ pub struct Ticket {
   title: String,
   body: String,
   status: TicketStatus,
+  close_reason: Option<CloseReason>,
+  reopen_count: u32,
   created_at: OffsetDateTime,
   updated_at: OffsetDateTime,
 }
 
 impl Ticket {
-  /// Opens a ticket; both texts are trimmed and must fit their limits.
+  /// The limits count the trimmed text, so padding never pushes a ticket over them.
   pub fn open(
     number: TicketNumber,
     requester_id: Uuid,
@@ -47,33 +52,130 @@ impl Ticket {
       assignee_id: None,
       title: title.to_owned(),
       body: body.to_owned(),
-      status: TicketStatus::Open,
+      status: TicketStatus::New,
+      close_reason: None,
+      reopen_count: 0,
       created_at: now,
       updated_at: now,
     })
   }
 
-  /// Applies an agent's change and reports whether anything changed.
-  pub fn apply(&mut self, change: TicketChange, now: OffsetDateTime) -> Result<bool, TicketError> {
+  pub fn customer_reply(
+    &mut self,
+    author_id: Uuid,
+    body: &str,
+    now: OffsetDateTime,
+  ) -> Result<Vec<TicketEvent>, TicketError> {
+    self.ensure_not_closed()?;
+    let message = Message::write(self.id, author_id, Author::Customer, Visibility::Public, body, now)?;
+    let mut events = vec![TicketEvent::MessageAdded(message)];
+    match self.status {
+      TicketStatus::Pending => self.move_to(TicketStatus::Open, &mut events),
+      TicketStatus::Resolved => {
+        self.reopen_count += 1;
+        self.move_to(TicketStatus::Open, &mut events);
+      }
+      TicketStatus::New | TicketStatus::Open | TicketStatus::Closed => {}
+    }
+    self.touch(now);
+    Ok(events)
+  }
+
+  pub fn staff_reply(
+    &mut self,
+    author_id: Uuid,
+    body: &str,
+    visibility: Visibility,
+    then: Option<TicketStatus>,
+    now: OffsetDateTime,
+  ) -> Result<Vec<TicketEvent>, TicketError> {
+    self.ensure_not_closed()?;
+    if visibility == Visibility::Internal && then.is_some() {
+      return Err(TicketError::NoteWithStatus);
+    }
+    let target = match visibility {
+      Visibility::Public => self.after_staff_reply(then)?,
+      Visibility::Internal => None,
+    };
+    let message = Message::write(self.id, author_id, Author::Staff, visibility, body, now)?;
+    let mut events = vec![TicketEvent::MessageAdded(message)];
+    if let Some(status) = target {
+      self.move_to(status, &mut events);
+    }
+    // A note leaves the ticket untouched, so customers cannot see one was written.
+    if visibility == Visibility::Public {
+      self.touch(now);
+    }
+    Ok(events)
+  }
+
+  pub fn confirm(&mut self, now: OffsetDateTime) -> Result<Vec<TicketEvent>, TicketError> {
+    self.ensure_not_closed()?;
+    if self.status != TicketStatus::Resolved {
+      return Err(self.cannot_move_to(TicketStatus::Closed));
+    }
+    Ok(self.close(CloseReason::Confirmed, now))
+  }
+
+  pub fn withdraw(&mut self, now: OffsetDateTime) -> Result<Vec<TicketEvent>, TicketError> {
+    self.ensure_not_closed()?;
+    if self.status == TicketStatus::Resolved {
+      return Err(self.cannot_move_to(TicketStatus::Closed));
+    }
+    Ok(self.close(CloseReason::Withdrawn, now))
+  }
+
+  pub fn assign(&mut self, change: AssigneeChange, now: OffsetDateTime) -> Result<Vec<TicketEvent>, TicketError> {
+    self.ensure_not_closed()?;
+    let assignee_id = change.assignee();
+    if assignee_id == self.assignee_id {
+      return Ok(Vec::new());
+    }
+    self.assignee_id = assignee_id;
+    self.touch(now);
+    Ok(vec![TicketEvent::Assigned])
+  }
+
+  /// The status a public staff reply leads to, or `None` to keep it.
+  fn after_staff_reply(&self, then: Option<TicketStatus>) -> Result<Option<TicketStatus>, TicketError> {
+    use TicketStatus::{New, Open, Pending, Resolved};
+    match (self.status, then) {
+      (New, None) => Ok(Some(Open)),
+      (_, None) | (Pending, Some(Pending)) | (Resolved, Some(Resolved)) => Ok(None),
+      (New | Open, Some(Pending)) | (New | Open | Pending, Some(Resolved)) => Ok(then),
+      (_, Some(to)) => Err(self.cannot_move_to(to)),
+    }
+  }
+
+  fn close(&mut self, reason: CloseReason, now: OffsetDateTime) -> Vec<TicketEvent> {
+    let mut events = Vec::new();
+    self.close_reason = Some(reason);
+    self.move_to(TicketStatus::Closed, &mut events);
+    self.touch(now);
+    events
+  }
+
+  fn move_to(&mut self, status: TicketStatus, events: &mut Vec<TicketEvent>) {
+    if status != self.status {
+      self.status = status;
+      events.push(TicketEvent::StatusChanged);
+    }
+  }
+
+  fn ensure_not_closed(&self) -> Result<(), TicketError> {
     if self.status == TicketStatus::Closed {
       return Err(TicketError::Closed);
     }
-    let status = change.status.unwrap_or(self.status);
-    if status != self.status && self.status.next() != Some(status) {
-      return Err(TicketError::Transition {
-        from: self.status,
-        to: status,
-      });
-    }
-    let assignee_id = change.assignee.applied_to(self.assignee_id);
-    if status == self.status && assignee_id == self.assignee_id {
-      return Ok(false);
-    }
-    self.status = status;
-    self.assignee_id = assignee_id;
-    // Another replica's clock may run behind; time never moves backwards for one ticket.
-    self.updated_at = stored_precision(now).max(self.updated_at);
-    Ok(true)
+    Ok(())
+  }
+
+  fn cannot_move_to(&self, to: TicketStatus) -> TicketError {
+    TicketError::Transition { from: self.status, to }
+  }
+
+  /// Always moves forward, even on a replica whose clock runs behind: it is the stale-write check's version.
+  fn touch(&mut self, now: OffsetDateTime) {
+    self.updated_at = stored_precision(now).max(self.updated_at + Duration::microseconds(1));
   }
 }
 
@@ -91,6 +193,8 @@ impl Ticket {
     title: String,
     body: String,
     status: TicketStatus,
+    close_reason: Option<CloseReason>,
+    reopen_count: u32,
     created_at: OffsetDateTime,
     updated_at: OffsetDateTime,
   ) -> Self {
@@ -102,6 +206,8 @@ impl Ticket {
       title,
       body,
       status,
+      close_reason,
+      reopen_count,
       created_at,
       updated_at,
     }
@@ -135,6 +241,14 @@ impl Ticket {
     self.status
   }
 
+  pub fn close_reason(&self) -> Option<CloseReason> {
+    self.close_reason
+  }
+
+  pub fn reopen_count(&self) -> u32 {
+    self.reopen_count
+  }
+
   pub fn created_at(&self) -> OffsetDateTime {
     self.created_at
   }
@@ -144,50 +258,61 @@ impl Ticket {
   }
 }
 
-/// Postgres rejects NUL in text, so it is refused here rather than failing as a server error.
-fn fits(text: &str, max_chars: usize) -> bool {
-  !text.is_empty() && !text.contains('\0') && text.chars().count() <= max_chars
-}
-
-/// Postgres keeps microseconds; matching it keeps `updated_at` exact for the stale-write check.
-fn stored_precision(time: OffsetDateTime) -> OffsetDateTime {
-  time
-    .replace_nanosecond(time.nanosecond() / 1_000 * 1_000)
-    .unwrap_or(time)
-}
-
 #[cfg(test)]
 mod tests {
   use time::macros::datetime;
 
-  use crate::AssigneeChange;
-
   use super::*;
+  use TicketStatus::{Closed, New, Open, Pending, Resolved};
 
-  const T0: OffsetDateTime = datetime!(2026-11-09 09:00 UTC);
-  const T1: OffsetDateTime = datetime!(2026-11-09 10:00 UTC);
+  const OPENED: OffsetDateTime = datetime!(2026-11-09 09:00 UTC);
+  const LATER: OffsetDateTime = datetime!(2026-11-09 10:00 UTC);
 
   fn open(requester: Uuid, title: &str, body: &str, now: OffsetDateTime) -> Result<Ticket, TicketError> {
     Ticket::open(TicketNumber::new(1), requester, title, body, now)
   }
 
-  fn open_ticket() -> Ticket {
-    open(Uuid::now_v7(), "  Printer on fire  ", "Please help.", T0).unwrap()
+  fn new_ticket() -> Ticket {
+    open(Uuid::now_v7(), "  Printer on fire  ", "Please help.", OPENED).unwrap()
   }
 
-  fn move_to(status: TicketStatus) -> TicketChange {
-    TicketChange {
-      status: Some(status),
-      ..TicketChange::default()
-    }
+  /// A ticket already in `status`, as if read back from the database.
+  fn ticket_in(status: TicketStatus) -> Ticket {
+    let t = new_ticket();
+    let reason = (status == Closed).then_some(CloseReason::Withdrawn);
+    Ticket::from_persistence(
+      t.id(),
+      t.number(),
+      t.requester_id(),
+      None,
+      t.title().to_owned(),
+      t.body().to_owned(),
+      status,
+      reason,
+      0,
+      OPENED,
+      OPENED,
+    )
+  }
+
+  fn staff(
+    ticket: &mut Ticket,
+    visibility: Visibility,
+    then: Option<TicketStatus>,
+  ) -> Result<Vec<TicketEvent>, TicketError> {
+    ticket.staff_reply(Uuid::now_v7(), "On it.", visibility, then, LATER)
+  }
+
+  fn status_changed(events: &[TicketEvent]) -> bool {
+    events.contains(&TicketEvent::StatusChanged)
   }
 
   #[test]
-  fn open_trims_the_title_and_starts_open() {
-    let ticket = open_ticket();
+  fn open_trims_the_title_and_starts_new() {
+    let ticket = new_ticket();
 
     assert_eq!(ticket.title(), "Printer on fire");
-    assert_eq!(ticket.status(), TicketStatus::Open);
+    assert_eq!(ticket.status(), New);
     assert_eq!(ticket.id().get_version_num(), 7);
   }
 
@@ -195,7 +320,7 @@ mod tests {
   fn open_counts_characters_not_bytes() {
     let title = "မ".repeat(MAX_TITLE_CHARS);
 
-    assert!(open(Uuid::now_v7(), &title, "body", T0).is_ok());
+    assert!(open(Uuid::now_v7(), &title, "body", OPENED).is_ok());
   }
 
   #[test]
@@ -204,120 +329,188 @@ mod tests {
     let too_long_title = "x".repeat(MAX_TITLE_CHARS + 1);
     let too_long_body = "x".repeat(MAX_BODY_CHARS + 1);
 
-    assert_eq!(open(requester, "   ", "body", T0), Err(TicketError::Title));
-    assert_eq!(open(requester, &too_long_title, "body", T0), Err(TicketError::Title));
-    assert_eq!(open(requester, "title", " \n", T0), Err(TicketError::Body));
-    assert_eq!(open(requester, "title", &too_long_body, T0), Err(TicketError::Body));
-  }
-
-  #[test]
-  fn status_moves_one_step_forward() {
-    let mut ticket = open_ticket();
-
-    for status in [TicketStatus::InProgress, TicketStatus::Resolved, TicketStatus::Closed] {
-      assert_eq!(ticket.apply(move_to(status), T1), Ok(true));
-    }
-    assert_eq!(ticket.updated_at(), T1);
-  }
-
-  #[test]
-  fn status_cannot_skip_a_step() {
-    let mut ticket = open_ticket();
-
-    let result = ticket.apply(move_to(TicketStatus::Resolved), T1);
-
+    assert_eq!(open(requester, "   ", "body", OPENED), Err(TicketError::Title));
     assert_eq!(
-      result,
+      open(requester, &too_long_title, "body", OPENED),
+      Err(TicketError::Title)
+    );
+    assert_eq!(open(requester, "title", " \n", OPENED), Err(TicketError::Body));
+    assert_eq!(open(requester, "title", &too_long_body, OPENED), Err(TicketError::Body));
+    assert_eq!(open(requester, "a\0b", "body", OPENED), Err(TicketError::Title));
+  }
+
+  #[test]
+  fn first_public_staff_reply_starts_work() {
+    let mut ticket = new_ticket();
+
+    let events = staff(&mut ticket, Visibility::Public, None).unwrap();
+
+    assert_eq!(ticket.status(), Open);
+    assert!(status_changed(&events));
+    assert_eq!(ticket.updated_at(), LATER);
+  }
+
+  #[test]
+  fn an_internal_note_never_changes_the_status() {
+    let mut ticket = new_ticket();
+
+    let events = staff(&mut ticket, Visibility::Internal, None).unwrap();
+
+    assert_eq!(ticket.status(), New);
+    assert!(!status_changed(&events));
+    assert_eq!(ticket.updated_at(), OPENED, "a note must not show on the ticket");
+    assert_eq!(
+      staff(&mut ticket, Visibility::Internal, Some(Pending)),
+      Err(TicketError::NoteWithStatus)
+    );
+  }
+
+  #[test]
+  fn staff_ask_or_resolve_only_where_the_table_allows() {
+    let allowed = [
+      (New, Pending),
+      (Open, Pending),
+      (New, Resolved),
+      (Open, Resolved),
+      (Pending, Resolved),
+    ];
+    for (from, to) in allowed {
+      let mut ticket = ticket_in(from);
+      staff(&mut ticket, Visibility::Public, Some(to)).unwrap();
+      assert_eq!(ticket.status(), to, "{from:?} -> {to:?}");
+    }
+
+    let forbidden = [(Resolved, Pending), (Open, New), (Open, Open), (Open, Closed)];
+    for (from, to) in forbidden {
+      let mut ticket = ticket_in(from);
+      assert_eq!(
+        staff(&mut ticket, Visibility::Public, Some(to)),
+        Err(TicketError::Transition { from, to }),
+        "{from:?} -> {to:?}"
+      );
+    }
+  }
+
+  #[test]
+  fn customer_reply_moves_pending_to_open() {
+    let mut ticket = ticket_in(Pending);
+
+    let events = ticket.customer_reply(Uuid::now_v7(), "Here it is.", LATER).unwrap();
+
+    assert_eq!(ticket.status(), Open);
+    assert!(status_changed(&events));
+    assert_eq!(ticket.reopen_count(), 0);
+  }
+
+  #[test]
+  fn customer_reply_reopens_a_resolved_ticket_and_counts_it() {
+    let mut ticket = ticket_in(Resolved);
+
+    ticket.customer_reply(Uuid::now_v7(), "Still broken.", LATER).unwrap();
+
+    assert_eq!(ticket.status(), Open);
+    assert_eq!(ticket.reopen_count(), 1);
+  }
+
+  #[test]
+  fn customer_reply_on_new_or_open_keeps_the_status() {
+    for status in [New, Open] {
+      let mut ticket = ticket_in(status);
+
+      let events = ticket.customer_reply(Uuid::now_v7(), "More details.", LATER).unwrap();
+
+      assert_eq!(ticket.status(), status);
+      assert!(!status_changed(&events));
+    }
+  }
+
+  #[test]
+  fn confirm_closes_only_a_resolved_ticket() {
+    let mut resolved = ticket_in(Resolved);
+    resolved.confirm(LATER).unwrap();
+    assert_eq!(resolved.status(), Closed);
+    assert_eq!(resolved.close_reason(), Some(CloseReason::Confirmed));
+
+    let mut open = ticket_in(Open);
+    assert_eq!(
+      open.confirm(LATER),
+      Err(TicketError::Transition { from: Open, to: Closed })
+    );
+  }
+
+  #[test]
+  fn withdraw_closes_anything_not_yet_resolved() {
+    for status in [New, Open, Pending] {
+      let mut ticket = ticket_in(status);
+      ticket.withdraw(LATER).unwrap();
+      assert_eq!(ticket.close_reason(), Some(CloseReason::Withdrawn));
+    }
+
+    let mut resolved = ticket_in(Resolved);
+    assert_eq!(
+      resolved.withdraw(LATER),
       Err(TicketError::Transition {
-        from: TicketStatus::Open,
-        to: TicketStatus::Resolved
+        from: Resolved,
+        to: Closed
       })
     );
   }
 
   #[test]
-  fn closed_ticket_cannot_change() {
-    let open = open_ticket();
-    let mut ticket = Ticket::from_persistence(
-      open.id(),
-      open.number(),
-      open.requester_id(),
-      None,
-      open.title().to_owned(),
-      open.body().to_owned(),
-      TicketStatus::Closed,
-      T0,
-      T0,
-    );
+  fn closed_is_final() {
+    let mut ticket = ticket_in(Closed);
 
-    assert_eq!(ticket.apply(move_to(TicketStatus::Open), T1), Err(TicketError::Closed));
+    assert_eq!(
+      ticket.customer_reply(Uuid::now_v7(), "Hello?", LATER),
+      Err(TicketError::Closed)
+    );
+    assert_eq!(staff(&mut ticket, Visibility::Internal, None), Err(TicketError::Closed));
+    assert_eq!(ticket.confirm(LATER), Err(TicketError::Closed));
+    assert_eq!(ticket.withdraw(LATER), Err(TicketError::Closed));
+    assert_eq!(
+      ticket.assign(AssigneeChange::Assign(Uuid::now_v7()), LATER),
+      Err(TicketError::Closed)
+    );
   }
 
   #[test]
-  fn assignee_can_be_set_and_cleared() {
-    let mut ticket = open_ticket();
+  fn assignee_can_be_set_and_cleared_and_same_is_no_event() {
+    let mut ticket = new_ticket();
     let agent = Uuid::now_v7();
 
-    ticket
-      .apply(
-        TicketChange {
-          assignee: AssigneeChange::Assign(agent),
-          ..TicketChange::default()
-        },
-        T1,
-      )
-      .unwrap();
-    assert_eq!(ticket.assignee_id(), Some(agent));
-
-    ticket
-      .apply(
-        TicketChange {
-          assignee: AssigneeChange::Unassign,
-          ..TicketChange::default()
-        },
-        T1,
-      )
-      .unwrap();
+    assert_eq!(
+      ticket.assign(AssigneeChange::Assign(agent), LATER),
+      Ok(vec![TicketEvent::Assigned])
+    );
+    assert_eq!(ticket.assign(AssigneeChange::Assign(agent), LATER), Ok(Vec::new()));
+    assert_eq!(
+      ticket.assign(AssigneeChange::Unassign, LATER),
+      Ok(vec![TicketEvent::Assigned])
+    );
     assert_eq!(ticket.assignee_id(), None);
   }
 
   #[test]
-  fn same_values_are_not_a_change() {
-    let mut ticket = open_ticket();
+  fn a_message_must_fit_its_limit() {
+    let mut ticket = new_ticket();
 
-    let changed = ticket.apply(move_to(TicketStatus::Open), T1);
-
-    assert_eq!(changed, Ok(false));
-    assert_eq!(ticket.updated_at(), T0);
+    assert_eq!(
+      ticket.customer_reply(Uuid::now_v7(), "  ", LATER),
+      Err(TicketError::Message)
+    );
+    assert_eq!(ticket.status(), New);
   }
 
   #[test]
-  fn open_stores_the_trimmed_body_and_refuses_nul() {
-    let requester = Uuid::now_v7();
-    let padded = format!("{}   ", "x".repeat(MAX_BODY_CHARS));
-
-    assert_eq!(open(requester, "t", &padded, T0).unwrap().body().len(), MAX_BODY_CHARS);
-    assert_eq!(open(requester, "a\0b", "body", T0), Err(TicketError::Title));
-    assert_eq!(open(requester, "title", "a\0b", T0), Err(TicketError::Body));
-  }
-
-  #[test]
-  fn times_are_kept_to_microseconds_like_postgres() {
-    let precise = T0.replace_nanosecond(123_456_789).unwrap();
-
-    let ticket = open(Uuid::now_v7(), "title", "body", precise).unwrap();
-
+  fn times_are_kept_to_microseconds_and_always_move_forward() {
+    let precise = OPENED.replace_nanosecond(123_456_789).unwrap();
+    let mut ticket = open(Uuid::now_v7(), "title", "body", precise).unwrap();
     assert_eq!(ticket.created_at().nanosecond(), 123_456_000);
-  }
-
-  #[test]
-  fn updated_at_never_moves_backwards() {
-    let mut ticket = open_ticket();
 
     ticket
-      .apply(move_to(TicketStatus::InProgress), T0 - time::Duration::minutes(5))
+      .assign(AssigneeChange::Assign(Uuid::now_v7()), OPENED - Duration::minutes(5))
       .unwrap();
 
-    assert_eq!(ticket.updated_at(), T0);
+    assert_eq!(ticket.updated_at(), ticket.created_at() + Duration::microseconds(1));
   }
 }

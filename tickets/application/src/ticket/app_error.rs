@@ -7,7 +7,7 @@ pub enum AppError {
   /// Missing, or not visible to the caller; the two look the same so existence never leaks.
   #[error("ticket not found")]
   NotFound,
-  #[error("only agents may do this")]
+  #[error("your role may not do this")]
   Forbidden,
   #[error("the ticket changed meanwhile; reload and retry")]
   Conflict,

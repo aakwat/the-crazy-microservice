@@ -349,7 +349,7 @@ code { font-family: var(--font-mono); font-size: 13px; }
   </figure>
   <div class="table-wrap"><table><thead><tr><th>Stream</th><th>Producer</th><th>Consumers</th></tr></thead><tbody><tr><td>tickets.events</td><td>tickets, via outbox</td><td>realtime, ai, image</td></tr><tr><td>attachments.events</td><td>image</td><td>tickets</td></tr><tr><td>triage.events</td><td>ai</td><td>tickets</td></tr><tr><td>jobs.commands</td><td>jobs</td><td>tickets</td></tr></tbody></table></div>
   <ul>
-    <li>Envelope: <code>{id: uuidv7, type, version, occurred_at, subject_id, traceparent, payload}</code>; payload holds IDs, status, <code>requester_id</code>, <code>assignee_id</code>.</li>
+    <li>Envelope: <code>{id: uuidv7, type, version, occurred_at, subject_id, traceparent, payload}</code>; payload holds IDs, status, <code>close_reason</code>, <code>requester_id</code>, <code>assignee_id</code> and, for a message, only its id, author and visibility.</li>
     <li>Delivery is at-least-once: every consumer dedupes on <code>id</code>. Stuck messages are reclaimed with <code>XAUTOCLAIM</code>; after 5 tries they move to <code>&lt;stream&gt;.dlq</code>.</li>
     <li>Workers use consumer groups. Realtime does not: each replica reads every event and pushes only to the requester and assignee.</li>
   </ul>

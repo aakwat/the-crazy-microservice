@@ -2,27 +2,41 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "tickets.events",
   "title": "tickets.events envelope",
-  "description": "Thin events from the tickets outbox: ids and status only, never ticket text. Each Redis stream entry holds this envelope as JSON in its `envelope` field.",
+  "description": "Thin events from the tickets outbox: ids, status and message kind only, never ticket or message text. Each Redis stream entry holds this envelope as JSON in its `envelope` field.",
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "type", "version", "occurred_at", "subject_id", "traceparent", "payload"],
   "properties": {
     "id": { "type": "string", "format": "uuid", "description": "uuidv7; consumers dedupe on it" },
-    "type": { "enum": ["ticket.created", "ticket.changed"] },
-    "version": { "const": 1 },
+    "type": {
+      "enum": ["ticket.created", "ticket.status_changed", "ticket.assigned", "ticket.message_added"]
+    },
+    "version": { "const": 2 },
     "occurred_at": { "type": "string", "format": "date-time" },
     "subject_id": { "type": "string", "format": "uuid", "description": "The ticket id" },
     "traceparent": { "type": ["string", "null"], "pattern": "^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$" },
     "payload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ticket_id", "reference", "status", "requester_id", "assignee_id"],
+      "required": ["ticket_id", "reference", "status", "close_reason", "requester_id", "assignee_id", "message"],
       "properties": {
         "ticket_id": { "type": "string", "format": "uuid" },
         "reference": { "type": "string", "pattern": "^T-[0-9]+$", "description": "Short number customers quote" },
-        "status": { "enum": ["open", "in_progress", "resolved", "closed"] },
+        "status": { "enum": ["new", "open", "pending", "resolved", "closed"] },
+        "close_reason": { "enum": ["confirmed", "withdrawn", null] },
         "requester_id": { "type": "string", "format": "uuid" },
-        "assignee_id": { "type": ["string", "null"], "format": "uuid" }
+        "assignee_id": { "type": ["string", "null"], "format": "uuid" },
+        "message": {
+          "description": "Set only on ticket.message_added: who wrote it and who may read it, never the text.",
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["id", "author", "visibility"],
+          "properties": {
+            "id": { "type": "string", "format": "uuid" },
+            "author": { "enum": ["customer", "staff"] },
+            "visibility": { "enum": ["public", "internal"] }
+          }
+        }
       }
     }
   }

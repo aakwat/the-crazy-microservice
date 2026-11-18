@@ -171,7 +171,8 @@ async fn a_customer_opens_lists_and_reads_their_ticket() {
 
   assert_eq!(created.status, StatusCode::CREATED);
   assert_eq!(created.headers[header::LOCATION], format!("/api/tickets/{id}"));
-  assert_eq!(created.body["status"], "open");
+  assert_eq!(created.body["status"], "new");
+  assert_eq!(created.body["close_reason"], Value::Null);
   assert_eq!(created.body["requester_id"], alice.id.to_string());
   assert_eq!(list.body["items"].as_array().unwrap().len(), 1);
   assert_eq!(list.body["next_before"], Value::Null);
@@ -183,27 +184,19 @@ async fn a_customer_opens_lists_and_reads_their_ticket() {
 }
 
 #[tokio::test]
-async fn others_get_404_and_only_agents_change_tickets() {
+async fn others_get_404_and_only_agents_assign() {
   let api = TestApi::start().await;
   let (alice, bob, agent) = (Caller::new("customer"), Caller::new("customer"), Caller::new("agent"));
   let created = api
     .send("POST", "/api/tickets", Some(&alice), Some(printer_on_fire()))
     .await;
   let uri = format!("/api/tickets/{}", created.body["id"].as_str().unwrap());
+  let to_agent = json!({"assignee_id": agent.id});
 
   let by_bob = api.send("GET", &uri, Some(&bob), None).await;
-  let by_alice = api
-    .send("PATCH", &uri, Some(&alice), Some(json!({"status": "in_progress"})))
-    .await;
-  let assigned = api
-    .send(
-      "PATCH",
-      &uri,
-      Some(&agent),
-      Some(json!({"status": "in_progress", "assignee_id": agent.id})),
-    )
-    .await;
-  let skipped = api
+  let by_alice = api.send("PATCH", &uri, Some(&alice), Some(to_agent.clone())).await;
+  let assigned = api.send("PATCH", &uri, Some(&agent), Some(to_agent)).await;
+  let status_via_patch = api
     .send("PATCH", &uri, Some(&agent), Some(json!({"status": "closed"})))
     .await;
   let unassigned = api
@@ -215,9 +208,65 @@ async fn others_get_404_and_only_agents_change_tickets() {
   assert_eq!(by_alice.status, StatusCode::FORBIDDEN);
   assert_eq!(assigned.status, StatusCode::OK);
   assert_eq!(assigned.body["assignee_id"], agent.id.to_string());
-  assert_eq!(skipped.status, StatusCode::UNPROCESSABLE_ENTITY);
+  assert_eq!(status_via_patch.status, StatusCode::BAD_REQUEST);
   assert_eq!(unassigned.body["assignee_id"], Value::Null);
-  assert_eq!(unassigned.body["status"], "in_progress");
+  assert_eq!(unassigned.body["status"], "new");
+}
+
+#[tokio::test]
+async fn a_conversation_resolves_reopens_and_closes_without_leaking_staff_details() {
+  let api = TestApi::start().await;
+  let (alice, agent) = (Caller::new("customer"), Caller::new("agent"));
+  let created = api
+    .send("POST", "/api/tickets", Some(&alice), Some(printer_on_fire()))
+    .await;
+  let uri = format!("/api/tickets/{}", created.body["id"].as_str().unwrap());
+  let messages = format!("{uri}/messages");
+  let post = |caller, body| api.send("POST", &messages, Some(caller), Some(body));
+
+  let note = post(&agent, json!({"body": "Fuser again.", "internal": true})).await;
+  let after_note = api.send("GET", &uri, Some(&alice), None).await;
+  let unassigned_resolve = post(&agent, json!({"body": "Done?", "then": "resolved"})).await;
+  api
+    .send("PATCH", &uri, Some(&agent), Some(json!({"assignee_id": agent.id})))
+    .await;
+  let resolved = post(&agent, json!({"body": "Replaced it.", "then": "resolved"})).await;
+  let customer_note = post(&alice, json!({"body": "x", "internal": true})).await;
+  let bad_then = post(&agent, json!({"body": "x", "then": "closed"})).await;
+  let reopened = post(&alice, json!({"body": "Still smoking."})).await;
+  let early_confirm = api.send("POST", &format!("{uri}/confirm"), Some(&alice), None).await;
+  let withdrawn = api.send("POST", &format!("{uri}/withdraw"), Some(&alice), None).await;
+  let after_close = post(&alice, json!({"body": "Hello?"})).await;
+  let alice_sees = api.send("GET", &messages, Some(&alice), None).await;
+  let agent_sees = api.send("GET", &messages, Some(&agent), None).await;
+  let agent_reads = api.send("GET", &uri, Some(&agent), None).await;
+
+  assert_eq!(note.status, StatusCode::CREATED);
+  assert_eq!(note.body["internal"], true);
+  assert_eq!(
+    after_note.body["updated_at"], created.body["updated_at"],
+    "a note must not show on the ticket"
+  );
+  assert_eq!(unassigned_resolve.status, StatusCode::FORBIDDEN);
+  assert_eq!(resolved.status, StatusCode::CREATED);
+  assert_eq!(resolved.body["from"], "support");
+  assert_eq!(customer_note.status, StatusCode::FORBIDDEN);
+  assert_eq!(bad_then.status, StatusCode::BAD_REQUEST);
+  assert_eq!(reopened.status, StatusCode::CREATED);
+  assert!(
+    reopened.body.get("author_id").is_none(),
+    "customers never see author ids"
+  );
+  assert_eq!(early_confirm.status, StatusCode::UNPROCESSABLE_ENTITY);
+  assert_eq!(withdrawn.body["status"], "closed");
+  assert_eq!(withdrawn.body["close_reason"], "withdrawn");
+  assert!(withdrawn.body.get("reopen_count").is_none());
+  assert_eq!(after_close.status, StatusCode::UNPROCESSABLE_ENTITY);
+  let alice_items = alice_sees.body["items"].as_array().unwrap();
+  assert_eq!(alice_items.len(), 2, "the internal note stays hidden");
+  assert!(alice_items[0].get("internal").is_none());
+  assert_eq!(agent_sees.body["items"].as_array().unwrap().len(), 3);
+  assert_eq!(agent_reads.body["reopen_count"], 1);
 }
 
 #[tokio::test]
