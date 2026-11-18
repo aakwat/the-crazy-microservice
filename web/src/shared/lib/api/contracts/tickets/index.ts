@@ -115,7 +115,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Agents only; move the status one step or (un)assign */
+        /** Agents only; take a free ticket (assignee_id = yourself) or let go of your own (null). Status moves only through messages, confirm and withdraw. */
         patch: {
             parameters: {
                 query?: never;
@@ -127,7 +127,7 @@ export interface paths {
             };
             requestBody: {
                 content: {
-                    "application/json": components["schemas"]["ChangeTicket"];
+                    "application/json": components["schemas"]["AssignTicket"];
                 };
             };
             responses: {
@@ -145,9 +145,172 @@ export interface paths {
                 403: components["responses"]["Problem"];
                 404: components["responses"]["Problem"];
                 409: components["responses"]["Problem"];
+            };
+        };
+        trace?: never;
+    };
+    "/api/tickets/{id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** The conversation, oldest first; customers see public messages only */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Every message the caller may see */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MessageList"];
+                    };
+                };
+                401: components["responses"]["Problem"];
+                404: components["responses"]["Problem"];
+            };
+        };
+        put?: never;
+        /** Reply. A customer reply reopens a pending or resolved ticket; a staff public reply starts work on a new one, and `then` asks the customer for something (pending) or resolves. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PostMessage"];
+                };
+            };
+            responses: {
+                /** @description Added */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Message"];
+                    };
+                };
+                400: components["responses"]["Problem"];
+                401: components["responses"]["Problem"];
+                403: components["responses"]["Problem"];
+                404: components["responses"]["Problem"];
+                409: components["responses"]["Problem"];
                 422: components["responses"]["Problem"];
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tickets/{id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** The requester confirms a resolved ticket; it closes */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The closed ticket */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Ticket"];
+                    };
+                };
+                401: components["responses"]["Problem"];
+                403: components["responses"]["Problem"];
+                404: components["responses"]["Problem"];
+                409: components["responses"]["Problem"];
+                422: components["responses"]["Problem"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tickets/{id}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** The requester withdraws a new, open or pending ticket; it closes */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The closed ticket */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Ticket"];
+                    };
+                };
+                401: components["responses"]["Problem"];
+                403: components["responses"]["Problem"];
+                404: components["responses"]["Problem"];
+                409: components["responses"]["Problem"];
+                422: components["responses"]["Problem"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
 }
@@ -155,21 +318,60 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
-         * @description Moves one step forward only; closed is final.
+         * @description docs/business-rules.md 13.1; closed is final.
          * @enum {string}
          */
-        Status: "open" | "in_progress" | "resolved" | "closed";
+        Status: "new" | "open" | "pending" | "resolved" | "closed";
+        /**
+         * @description Set exactly when the status is closed.
+         * @enum {string|null}
+         */
+        CloseReason: "confirmed" | "withdrawn" | null;
         CreateTicket: {
             title: string;
             body: string;
         };
-        ChangeTicket: {
-            status?: components["schemas"]["Status"];
+        AssignTicket: {
             /**
              * Format: uuid
-             * @description Absent keeps the assignee, null unassigns.
+             * @description null unassigns.
              */
-            assignee_id?: string | null;
+            assignee_id: string | null;
+        };
+        PostMessage: {
+            body: string;
+            /**
+             * @description Staff only; a note customers never see
+             * @default false
+             */
+            internal: boolean;
+            /**
+             * @description The assignee only, with a public reply; ask the customer for something or resolve.
+             * @enum {string}
+             */
+            then?: "pending" | "resolved";
+        };
+        Message: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description Staff replies are signed by the company, never by a person.
+             * @enum {string}
+             */
+            from: "customer" | "support";
+            body: string;
+            /** Format: date-time */
+            created_at: string;
+            /** @description Agents only; absent for customers */
+            internal?: boolean;
+            /**
+             * Format: uuid
+             * @description Agents only; absent for customers
+             */
+            author_id?: string;
+        };
+        MessageList: {
+            items: components["schemas"]["Message"][];
         };
         Ticket: {
             /** Format: uuid */
@@ -186,6 +388,9 @@ export interface components {
             title: string;
             body: string;
             status: components["schemas"]["Status"];
+            close_reason: components["schemas"]["CloseReason"];
+            /** @description Agents only; absent for customers */
+            reopen_count?: number;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */

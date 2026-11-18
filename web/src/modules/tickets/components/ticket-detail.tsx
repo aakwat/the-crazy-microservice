@@ -5,7 +5,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/sha
 import { formatExact } from "@/shared/lib/format";
 
 import { useTicket } from "../application/use-ticket";
+import { canReply } from "../domain/lifecycle";
+import { closeReasonLabel } from "../domain/status";
+import { MessageThread } from "./message-thread";
+import { ReplyForm } from "./reply-form";
 import { StatusBadge } from "./status-badge";
+import { TicketActions } from "./ticket-actions";
 
 export interface TicketDetailProps {
 	id: string;
@@ -26,19 +31,34 @@ export function TicketDetail(props: TicketDetailProps) {
 		);
 	}
 
+	const { status, close_reason: closeReason } = ticket.data;
+	const closedBecause = closeReasonLabel(closeReason);
+
 	return (
-		<Card className="max-w-2xl">
-			<CardHeader>
-				<CardDescription className="font-mono">{ticket.data.reference}</CardDescription>
-				<CardTitle className="flex items-center justify-between gap-3">
-					{ticket.data.title}
-					<StatusBadge status={ticket.data.status} />
-				</CardTitle>
-				<CardDescription>Sent {formatExact(ticket.data.created_at, "en")}</CardDescription>
-			</CardHeader>
-			<CardContent>
-				<p className="whitespace-pre-wrap">{ticket.data.body}</p>
-			</CardContent>
-		</Card>
+		<div className="grid max-w-2xl gap-6">
+			<Card>
+				<CardHeader>
+					<CardDescription className="font-mono">{ticket.data.reference}</CardDescription>
+					<CardTitle className="flex items-center justify-between gap-3">
+						{ticket.data.title}
+						<StatusBadge status={status} />
+					</CardTitle>
+					<CardDescription>Sent {formatExact(ticket.data.created_at, "en")}</CardDescription>
+				</CardHeader>
+				<CardContent className="grid gap-3">
+					<p className="whitespace-pre-wrap">{ticket.data.body}</p>
+					{closedBecause && <p className="text-sm text-muted-foreground">{closedBecause}</p>}
+				</CardContent>
+			</Card>
+
+			<section aria-labelledby="conversation-heading" className="grid gap-4">
+				<h2 id="conversation-heading" className="text-lg font-medium">
+					Conversation
+				</h2>
+				<MessageThread id={id} />
+				{canReply(status) && <ReplyForm id={id} status={status} />}
+				<TicketActions id={id} status={status} />
+			</section>
+		</div>
 	);
 }

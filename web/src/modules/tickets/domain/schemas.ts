@@ -3,6 +3,7 @@ import { z } from "zod";
 /** The limits the tickets service enforces, so mistakes show before anything is sent. */
 export const MAX_TITLE_CHARS = 200;
 export const MAX_BODY_CHARS = 10_000;
+export const MAX_MESSAGE_CHARS = 10_000;
 
 export const createTicketRequestSchema = z.object({
 	title: z
@@ -15,6 +16,14 @@ export const createTicketRequestSchema = z.object({
 		.trim()
 		.min(1, "Please describe the problem.")
 		.max(MAX_BODY_CHARS, `Please keep the description under ${MAX_BODY_CHARS} characters.`),
+});
+
+export const replyRequestSchema = z.object({
+	body: z
+		.string()
+		.trim()
+		.min(1, "Please write a message.")
+		.max(MAX_MESSAGE_CHARS, `Please keep your message under ${MAX_MESSAGE_CHARS} characters.`),
 });
 
 export const ticketIdSchema = z.uuid();
